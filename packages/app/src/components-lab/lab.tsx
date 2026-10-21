@@ -251,12 +251,7 @@ function Stage(props: { entry: LabEntry; scheme: "dark" | "light"; onScheme: () 
             onChange: (patch) => setArgs(fromKnobs(controls, patch)),
           })
 
-          store.sync(
-            knobValues(
-              controls,
-              untrack(() => ({ ...args })),
-            ),
-          )
+          store.sync(knobValues(controls, args))
           knobs = { sync: (values) => store.sync(values) }
           unmount = store.mount(panel, {
             theme: scheme,
