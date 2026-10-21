@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import type { FormInfo } from "@opencode/client/promise"
 import { activePermissionRequest, activeQuestionRequest } from "@opencode/session-ui/storybook"
 import { Composer } from "@/composer/composer"
@@ -90,15 +91,17 @@ function ComposerDocks(props: DocksProps) {
   } satisfies SessionComposerRegionViewController
 
   return (
-    // Anchored to the bottom like the session screen, so the docks grow upward over a composer that stays put.
-    <div class="flex h-[560px] w-[640px] max-w-full flex-col justify-end">
-      <SessionComposerRegion
-        controller={region}
-        above={<SessionQueuePanel queue={queue} hidden={blocked()} />}
-        composer={<Composer model={prompt.controller} borderUnderlay />}
-        subagent={null}
-      />
-    </div>
+    <QueryClientProvider client={new QueryClient()}>
+      {/* Anchored to the bottom like the session screen, so the docks grow upward over a composer that stays put. */}
+      <div class="flex h-[560px] w-[640px] max-w-full flex-col justify-end">
+        <SessionComposerRegion
+          controller={region}
+          above={<SessionQueuePanel queue={queue} hidden={blocked()} />}
+          composer={<Composer model={prompt.controller} borderUnderlay />}
+          subagent={null}
+        />
+      </div>
+    </QueryClientProvider>
   )
 }
 
