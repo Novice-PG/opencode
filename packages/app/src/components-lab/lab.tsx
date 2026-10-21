@@ -4,31 +4,33 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createSignal,
   ErrorBoundary,
-  For,
   on,
   onCleanup,
+  onMount,
   Show,
   untrack,
   type JSX,
 } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
-import { Button } from "@opencode/ui/button"
-import { TextInput } from "@opencode/ui/text-input"
+import { Dynamic, insert } from "solid-js/web"
 import { useTheme } from "@opencode/ui/theme"
-import { motionGlobals, motionTuning } from "@opencode/ui/motion-tuning"
-import type { Field } from "knobs"
+import { motionGlobals } from "@opencode/ui/motion-tuning"
+import { choice, defineControls, toolbar, type Field } from "knobs"
+import { commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
+import { Tree } from "knobs/ui/solid"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerProvider } from "@/runtime/server/current"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useGlobal } from "@/runtime/server/runtime"
-import { SessionPanelFrame, SessionRouteFrame } from "@/session/session-frame"
+import { SessionRouteFrame } from "@/session/session-frame"
 import {
-  labControls,
+  fileName,
+  knobArgs,
   labEntry,
+  labFields,
   stateArgs,
-  type LabControl,
   type LabEntry,
   type StoryArgs,
   type StoryModule,
@@ -37,6 +39,10 @@ import {
 // How long Play holds each state at full speed. Slow motion doubles it while the motion itself runs 4× longer, so
 // a transition still finishes and Play keeps moving.
 const hold = 1600
+
+const searchIcon = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>`
+
+const themeIcon = `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg>`
 
 // Vite needs the patterns as literals in each call.
 const modules = import.meta.glob<StoryModule>([
@@ -59,308 +65,285 @@ const sources = import.meta.glob<string>(
 
 /** Loads every story file. A file that fails to import is reported rather than hiding the rest. */
 async function loadCatalog() {
-  const results = await Promise.allSettled(
-    Object.entries(modules).map(async ([file, load]) => {
+  const files = Object.entries(modules)
+  const results: PromiseSettledResult<LabEntry>[] = []
+
+  // A few files at a time: hundreds of parallel module requests overflow a dev server reached through a proxy.
+  for (let index = 0; index < files.length; index += 8) {
+    const chunk = files.slice(index, index + 8).map(async ([file, load]) => {
       const [module, source] = await Promise.all([load(), sources[file]?.() ?? ""])
 
       return labEntry(file, module, source)
-    }),
-  )
+    })
+
+    results.push(...(await Promise.allSettled(chunk)))
+  }
 
   return {
     entries: results
       .flatMap((result) => (result.status === "fulfilled" ? [result.value] : []))
       .toSorted((a, b) => a.title.localeCompare(b.title)),
-    failed: results.flatMap((result, index) =>
-      result.status === "rejected" ? [{ file: Object.keys(modules)[index] ?? "", error: String(result.reason) }] : [],
-    ),
+    failed: results.filter((result) => result.status === "rejected").length,
   }
 }
 
-/** The development components lab: every story file, rendered with the app's own providers and theme. */
+type Row = { id: string; label: string; detail?: string; children?: Row[] }
+
+/** The development components lab: every story file in knobs' workspace, rendered with the app's providers and theme. */
 export default function ComponentsLab() {
   const language = useLanguage()
   const theme = useTheme()
   const [params, setParams] = useSearchParams<{ story?: string }>()
   const [catalog] = createResource(loadCatalog)
-  const [ui, setUi] = createStore<{ query: string; scheme: "dark" | "light" }>({ query: "", scheme: "dark" })
-
-  createEffect(() => theme.previewColorScheme(ui.scheme))
-  onCleanup(() => theme.cancelPreview())
+  const [scheme, setScheme] = createSignal<"dark" | "light">("dark")
+  let palette: CommandPalette | undefined
 
   const entries = () => catalog()?.entries ?? []
-  const selected = createMemo(() => entries().find((entry) => entry.title === params.story))
+  const selected = createMemo(() => entries().find((entry) => entry.file === params.story))
 
-  const sections = createMemo(() => {
-    const query = ui.query.trim().toLowerCase()
-    const matches = entries().filter((entry) => entry.title.toLowerCase().includes(query))
+  const rows = createMemo(() =>
+    [...new Set(entries().map((entry) => section(entry.title)))].map(
+      (name): Row => ({
+        id: `section:${name}`,
+        label: name,
+        children: entries()
+          .filter((entry) => section(entry.title) === name)
+          .map((entry) => ({
+            id: entry.file,
+            label: entry.title.split("/").slice(1).join(" / ") || entry.title,
+            // Files may share a title, as Storybook merges them; the file name tells them apart.
+            detail:
+              entries().filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
+          })),
+      }),
+    ),
+  )
 
-    return [...new Set(matches.map((entry) => section(entry.title)))].map((name) => ({
-      name,
-      entries: matches.filter((entry) => section(entry.title) === name),
-    }))
+  const search = () => {
+    palette?.dispose()
+    palette = commandPalette({
+      hotkey: false,
+      recents: false,
+      placeholder: language.t("lab.search"),
+      look: { theme: scheme() },
+      commands: entries().map((entry) => ({
+        id: entry.file,
+        label: entry.title.split("/").join(" / "),
+        hint: fileName(entry.file),
+        run: () => setParams({ story: entry.file }),
+      })),
+    })
+    palette.open()
+  }
+
+  createEffect(() => theme.previewColorScheme(scheme()))
+  onCleanup(() => {
+    theme.cancelPreview()
+    palette?.dispose()
+  })
+
+  createEffect(() => {
+    const failed = catalog()?.failed
+
+    if (failed) toast(language.plural("lab.failed", failed))
+  })
+
+  const inspector = pane(() => undefined)
+
+  const stories = pane(() => (
+    <Show when={catalog()}>
+      <Tree
+        items={rows()}
+        detail={(row) => row.detail}
+        label={language.t("lab.components")}
+        expanded={rows().map((row) => row.id)}
+        selection={params.story ? [params.story] : []}
+        onSelect={(_, primary) => {
+          if (primary && !primary.startsWith("section:")) setParams({ story: primary })
+        }}
+      />
+    </Show>
+  ))
+
+  const stage = pane(() => (
+    <Show
+      when={selected()}
+      keyed
+      fallback={
+        <div class="flex size-full items-center justify-center bg-v2-background-bg-base text-[13px] leading-4 text-v2-text-text-faint">
+          {language.t("lab.pick")}
+        </div>
+      }
+    >
+      {(entry) => <Stage entry={entry} inspector={inspector} scheme={untrack(scheme)} />}
+    </Show>
+  ))
+
+  let element!: HTMLDivElement
+
+  onMount(() => {
+    const layout = split(element, {
+      theme: "dark",
+      storage: null,
+      panes: [
+        {
+          id: "stories",
+          size: 260,
+          min: 200,
+          max: 420,
+          collapsible: true,
+          title: language.t("lab.components"),
+          element: stories,
+          actions: [
+            { label: language.t("lab.search"), icon: searchIcon, run: search },
+            {
+              label: language.t("lab.theme"),
+              icon: themeIcon,
+              run: () => setScheme(scheme() === "dark" ? "light" : "dark"),
+            },
+          ],
+        },
+        { id: "stage", min: 360, element: stage },
+        { id: "inspector", size: 300, min: 260, max: 460, collapsible: true, title: "", element: inspector },
+      ],
+    })
+
+    createEffect(() => layout.pane("stories").title(language.t("lab.components"), entries().length))
+    createEffect(() => layout.pane("inspector").title(selected()?.title.split("/").join(" / ") ?? ""))
+    createEffect(on(scheme, (next) => restyle(layout.element, { theme: next }), { defer: true }))
+    onCleanup(() => layout.dispose())
   })
 
   return (
     <SessionRouteFrame padded>
-      <SessionPanelFrame raised>
-        <div data-component="components-lab" class="flex min-h-0 flex-1">
-          <nav class="flex w-[248px] shrink-0 flex-col border-e border-v2-border-border-muted">
-            <div class="flex flex-col gap-2 p-3">
-              <a href="/" class="flex h-7 items-center px-2 text-[13px] leading-4 text-v2-text-text-muted">
-                {language.t("lab.back")}
-              </a>
-              <TextInput
-                class="w-full"
-                value={ui.query}
-                placeholder={language.t("lab.search")}
-                aria-label={language.t("lab.search")}
-                onInput={(event) => setUi("query", event.currentTarget.value)}
-              />
-            </div>
-            <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3">
-              <For each={sections()}>
-                {(group) => (
-                  <div class="flex flex-col">
-                    <div class="flex h-7 items-center px-2 text-[12px] leading-4 text-v2-text-text-faint">
-                      {group.name}
-                    </div>
-                    <For each={group.entries}>
-                      {(entry) => (
-                        <button
-                          type="button"
-                          class="flex h-8 w-full items-center rounded-[6px] px-2 text-start text-[13px] leading-4 text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
-                          classList={{
-                            "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base": entry === selected(),
-                          }}
-                          onClick={() => setParams({ story: entry.title })}
-                        >
-                          <span class="min-w-0 truncate">
-                            {entry.title.split("/").slice(1).join(" / ") || entry.title}
-                          </span>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                )}
-              </For>
-              <Show when={catalog()?.failed.length}>
-                <div class="px-2 text-[12px] leading-4 text-v2-state-fg-danger">
-                  {language.plural("lab.failed", catalog()?.failed.length ?? 0)}
-                </div>
-              </Show>
-            </div>
-          </nav>
-          <Show
-            when={selected()}
-            keyed
-            fallback={
-              <div class="flex flex-1 items-center justify-center text-[13px] leading-4 text-v2-text-text-faint">
-                {language.t("lab.pick")}
-              </div>
-            }
-          >
-            {(entry) => (
-              <Stage
-                entry={entry}
-                scheme={ui.scheme}
-                onScheme={() => setUi("scheme", ui.scheme === "dark" ? "light" : "dark")}
-              />
-            )}
-          </Show>
-        </div>
-      </SessionPanelFrame>
+      <div ref={element} data-component="components-lab" class="min-h-0 flex-1" />
     </SessionRouteFrame>
   )
 }
 
-function Stage(props: { entry: LabEntry; scheme: "dark" | "light"; onScheme: () => void }) {
+/** One story on the app's background, with its args and states as a knobs panel in the inspector. */
+function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" | "light" }) {
   const language = useLanguage()
   const entry = props.entry
-  const controls = labControls(entry)
+  const fields = labFields(entry)
+  const names = entry.states.map((state) => state.name)
   const [args, setArgs] = createStore<StoryArgs>(stateArgs(entry, 0))
-  const [view, setView] = createStore({ index: 0, playing: false, slow: motionGlobals.slow.value })
+  const [index, setIndex] = createSignal(0)
   const component = entry.component
   const fallback = component && ((values: StoryArgs) => <Dynamic component={component} {...values} />)
   // Switching to a state that shares the current render function keeps the mounted instance, so its transitions play.
-  const render = () => entry.states[view.index]?.render ?? entry.render ?? fallback
-  let knobs: { sync: (values: KnobValues) => void } | undefined
+  const render = () => entry.states[index()]?.render ?? entry.render ?? fallback
   let timer: ReturnType<typeof setTimeout> | undefined
-  let panel!: HTMLDivElement
 
-  // One batch, so a state with its own render function never renders with the previous state's args.
-  const select = (index: number) => {
-    const next = stateArgs(entry, index)
-    batch(() => {
-      setArgs(reconcile(next))
-      setView("index", index)
-    })
-    knobs?.sync(knobValues(controls, next))
-  }
+  // A state is a preset: its chip, `[` and `]`, the State row and Play all apply it, so the panel shows where it is.
+  const preset = (next: number): void => store.preset(next === 0 ? "default" : (names[next] ?? "default"))
 
-  const step = () => select((view.index + 1) % Math.max(1, entry.states.length))
+  const step = (by: number) => preset((index() + by + names.length) % names.length)
 
   const play = () => {
     clearTimeout(timer)
-
-    if (!view.playing) return
     timer = setTimeout(
       () => {
-        step()
+        step(1)
         play()
       },
       (hold * (motionGlobals.slow.value ? 2 : 1)) / motionGlobals.speed.value,
     )
   }
 
-  onCleanup(() => clearTimeout(timer))
-  onCleanup(motionTuning.subscribe(() => setView("slow", motionGlobals.slow.value)))
+  const [first, ...rest] = names
 
-  createEffect(
-    on(
-      () => props.scheme,
-      (scheme) => {
-        let disposed = false
-        let unmount: (() => void) | undefined
+  const states: { [key: string]: Field } =
+    first === undefined || rest.length === 0
+      ? {}
+      : {
+          state: choice(first, [first, ...rest], { readOnly: true }),
+          play: toolbar([
+            {
+              id: "previous",
+              label: language.t("lab.previous"),
+              icon: "M200 48 80 128l120 80ZM48 48h16v160H48Z",
+              run: () => step(-1),
+            },
+            { id: "play", label: language.t("lab.play"), icon: "play", run: play },
+            { id: "pause", label: language.t("lab.pause"), icon: "pause", run: () => clearTimeout(timer) },
+            {
+              id: "next",
+              label: language.t("lab.next"),
+              icon: "M56 48l120 80-120 80ZM192 48h16v160h-16Z",
+              run: () => step(1),
+            },
+          ]),
+        }
 
-        void import("knobs").then(({ choice, defineControls, knob, toggle }) => {
-          if (disposed) return
+  const store = defineControls(
+    "components-lab",
+    { ...states, ...fields },
+    {
+      storage: null,
+      persist: "none",
+      defaultLabel: first,
+      presets: Object.fromEntries(
+        entry.states
+          .slice(1)
+          .map((state, offset) => [
+            state.name,
+            { state: state.name, ...knobArgs(fields, stateArgs(entry, offset + 1)) },
+          ]),
+      ),
+      onChange: (patch, values, meta) => {
+        if (!("state" in patch)) return setArgs(patch)
 
-          const schema = Object.fromEntries(
-            controls.flatMap((control): [string, Field][] => {
-              if (control.kind === "toggle") return [[control.key, toggle(control.value, { random: true })]]
-
-              if (control.kind === "number") {
-                const meta = { min: control.min, max: control.max, step: control.step }
-
-                return [[control.key, knob(control.value, meta)]]
-              }
-
-              const [first, ...rest] = control.kind === "choice" ? control.options.map(String) : []
-
-              return first === undefined ? [] : [[control.key, choice(control.value, [first, ...rest])]]
-            }),
-          )
-
-          if (Object.keys(schema).length === 0) return
-
-          const store = defineControls("components-lab", schema, {
-            enabled: true,
-            storage: null,
-            persist: "none",
-            onChange: (patch) => setArgs(fromKnobs(controls, patch)),
-          })
-
-          store.sync(knobValues(controls, args))
-          knobs = { sync: (values) => store.sync(values) }
-          unmount = store.mount(panel, {
-            theme: scheme,
-            header: { title: false, buttons: ["undo", "redo", "reset"] },
-            variants: false,
-            session: false,
-          })
+        // One batch, so a state with its own render function never renders with the previous state's args.
+        const next = Math.max(0, names.indexOf(String(values.state)))
+        batch(() => {
+          setArgs(reconcile(stateArgs(entry, next)))
+          setIndex(next)
         })
 
-        onCleanup(() => {
-          disposed = true
-          knobs = undefined
-          unmount?.()
-        })
+        // Undo or a reset moved the state: bring the other knobs to the state's args too.
+        if (meta.source !== "preset") queueMicrotask(() => preset(next))
       },
-    ),
+    },
   )
 
+  onCleanup(() => clearTimeout(timer))
+
+  if (Object.keys(store.schema).length > 0)
+    onCleanup(
+      store.mount(props.inspector, {
+        theme: props.scheme,
+        header: { title: false, buttons: ["undo", "redo", "reset"] },
+        variants: false,
+        session: false,
+      }),
+    )
+
   return (
-    <div class="flex min-w-0 flex-1">
-      <section class="flex min-w-0 flex-1 flex-col">
-        <header class="flex min-h-12 shrink-0 items-center gap-3 border-b border-v2-border-border-muted px-4 py-2">
-          <h1 class="min-w-0 flex-1 truncate text-[13px] leading-4 font-medium text-v2-text-text-base">
-            {entry.title.split("/").join(" / ")}
-          </h1>
-          <Show when={entry.states.length > 1}>
-            <Button size="small" variant="ghost" onClick={step}>
-              {language.t("lab.step")}
-            </Button>
-            <Button
-              size="small"
-              variant={view.playing ? "neutral" : "ghost"}
-              onClick={() => {
-                setView("playing", !view.playing)
-                play()
+    <div
+      class="flex size-full overflow-auto bg-v2-background-bg-base"
+      classList={{ "items-center justify-center p-8": !entry.fullscreen, "flex-col": entry.fullscreen }}
+    >
+      <Server>
+        <Show when={render()} keyed fallback={language.t("lab.empty")}>
+          {(fn) => (
+            <ErrorBoundary
+              fallback={(error, reset) => {
+                // A failing state does not stick: the next state or edit tries again.
+                createEffect(on(() => ({ ...args }), reset, { defer: true }))
+
+                return (
+                  <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
+                    {String(error)}
+                  </pre>
+                )
               }}
             >
-              {language.t(view.playing ? "lab.pause" : "lab.play")}
-            </Button>
-          </Show>
-          <Button
-            size="small"
-            variant={view.slow ? "neutral" : "ghost"}
-            onClick={() => motionTuning.set(motionGlobals.slow, !view.slow)}
-          >
-            {language.t("lab.slow")}
-          </Button>
-          <Button size="small" variant="ghost" onClick={props.onScheme}>
-            {language.t(props.scheme === "dark" ? "lab.light" : "lab.dark")}
-          </Button>
-        </header>
-        <Show when={entry.states.length > 1}>
-          <div class="flex shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-muted px-3 py-2">
-            <For each={entry.states}>
-              {(state, index) => (
-                <button
-                  type="button"
-                  aria-pressed={index() === view.index}
-                  class="flex h-7 shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[13px] leading-4 text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
-                  classList={{ "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base": index() === view.index }}
-                  onClick={() => select(index())}
-                >
-                  <span class="text-v2-text-text-faint [font-variant-numeric:tabular-nums]">{index() + 1}</span>
-                  {state.name}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-        <div
-          class="flex min-h-0 flex-1 overflow-auto"
-          classList={{ "items-center justify-center p-8": !entry.fullscreen, "flex-col": entry.fullscreen }}
-        >
-          <Server>
-            <Show when={render()} keyed fallback={language.t("lab.empty")}>
-              {(fn) => (
-                <ErrorBoundary
-                  fallback={(error, reset) => {
-                    // A failing state does not stick: the next state or edit tries again.
-                    createEffect(on(() => ({ ...args }), reset, { defer: true }))
-
-                    return (
-                      <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
-                        {String(error)}
-                      </pre>
-                    )
-                  }}
-                >
-                  {untrack(() => fn(args))}
-                </ErrorBoundary>
-              )}
-            </Show>
-          </Server>
-        </div>
-      </section>
-      <aside class="flex w-[300px] shrink-0 flex-col gap-3 overflow-y-auto border-s border-v2-border-border-muted p-3">
-        <div ref={panel} />
-        <For each={controls.filter((control) => control.kind === "text")}>
-          {(control) => (
-            <label class="flex flex-col gap-1.5 text-[12px] leading-4 text-v2-text-text-muted">
-              {control.key}
-              <TextInput
-                value={String(args[control.key] ?? "")}
-                onInput={(event) => setArgs(control.key, event.currentTarget.value)}
-              />
-            </label>
+              {untrack(() => fn(args))}
+            </ErrorBoundary>
           )}
-        </For>
-      </aside>
+        </Show>
+      </Server>
     </div>
   )
 }
@@ -382,30 +365,12 @@ function section(title: string) {
   return title.split("/")[0] ?? title
 }
 
-type KnobValues = { [key: string]: string | number | boolean }
+// knobs' split takes each pane's content as a node; Solid keeps it reactive where it sits.
+function pane(content: () => JSX.Element) {
+  const element = document.createElement("div")
 
-function knobValues(controls: LabControl[], args: StoryArgs): KnobValues {
-  return Object.fromEntries(
-    controls.flatMap((control): [string, string | number | boolean][] => {
-      const value = args[control.key]
+  element.className = "size-full"
+  insert(element, content)
 
-      if (control.kind === "toggle") return [[control.key, value === true]]
-
-      if (control.kind === "choice") return [[control.key, String(value ?? control.value)]]
-
-      if (control.kind === "number") return [[control.key, Number(value ?? control.value)]]
-
-      return []
-    }),
-  )
-}
-
-function fromKnobs(controls: LabControl[], patch: StoryArgs) {
-  return Object.fromEntries(
-    Object.entries(patch).map(([key, value]) => {
-      const control = controls.find((item) => item.key === key)
-
-      return [key, control?.kind === "choice" ? control.options.find((option) => String(option) === value) : value]
-    }),
-  )
+  return element
 }

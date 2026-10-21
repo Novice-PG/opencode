@@ -1,5 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type -- CSF args are props each story owns; the lab forwards them */
 import { Schema } from "effect"
+import { choice, knob, toggle, type Field } from "knobs"
 import type { Component, JSX } from "solid-js"
 
 // Storybook's CSF as the stories in this repository write it: a default meta and named stories with args.
@@ -11,7 +12,7 @@ export type StoryRender = (args: StoryArgs) => JSX.Element
 
 type ArgType = {
   control?: string | { type?: string; min?: number; max?: number; step?: number }
-  options?: readonly (string | number)[]
+  options?: readonly string[]
 }
 
 // The default export (a meta) and each named story share this shape; a story may also be a bare render function.
@@ -41,12 +42,6 @@ export type LabEntry = {
   states: LabState[]
 }
 
-export type LabControl =
-  | { key: string; kind: "toggle"; value: boolean }
-  | { key: string; kind: "choice"; value: string; options: readonly (string | number)[] }
-  | { key: string; kind: "number"; value: number; min: number; max: number; step: number }
-  | { key: string; kind: "text"; value: string }
-
 // A story file as the lab shows it. A module lists its exports alphabetically, so `source`, the file's text, gives the
 // order the author wrote the states in.
 export function labEntry(file: string, module: StoryModule, source: string): LabEntry {
@@ -67,7 +62,7 @@ export function labEntry(file: string, module: StoryModule, source: string): Lab
 
   return {
     file,
-    title: meta.title ?? file.replace(/^.*\//, "").replace(/\.stories\.tsx$/, ""),
+    title: meta.title ?? fileName(file),
     component: meta.component,
     args: meta.args ?? {},
     argTypes: {
@@ -83,49 +78,65 @@ export function labEntry(file: string, module: StoryModule, source: string): Lab
   }
 }
 
+/** A story file's name: `composer-docks` for `…/composer-docks.stories.tsx`. */
+export function fileName(file: string) {
+  return file.replace(/^.*\//, "").replace(/\.stories\.tsx$/, "")
+}
+
 /** The args a state renders with: the meta's, then the state's own. */
 export function stateArgs(entry: LabEntry, index: number) {
   return { ...entry.args, ...entry.states[index]?.args }
 }
 
-/** A control for every arg the meta or a state sets, typed by its argType or else by its value. */
-export function labControls(entry: LabEntry): LabControl[] {
+/**
+ * A knob for every arg the meta or a state sets, typed by its argType or else by its value. Text and object args keep
+ * the story's values: knobs has no text field.
+ */
+export function labFields(entry: LabEntry) {
   const keys = new Set([
     ...Object.keys(entry.argTypes),
     ...Object.keys(entry.args),
     ...entry.states.flatMap((state) => Object.keys(state.args)),
   ])
 
-  return [...keys].flatMap((key): LabControl[] => {
-    const type = entry.argTypes[key]
-    const value = entry.args[key] ?? entry.states.find((state) => key in state.args)?.args[key]
-    const control = isText(type?.control) ? { type: type.control } : (type?.control ?? {})
+  return Object.fromEntries(
+    [...keys].flatMap((key): [string, Field][] => {
+      const type = entry.argTypes[key]
+      const value = entry.args[key] ?? entry.states.find((state) => key in state.args)?.args[key]
+      const control = isText(type?.control) ? { type: type.control } : (type?.control ?? {})
+      const [first, ...rest] = type?.options ?? []
 
-    if (type?.options?.length) {
-      return [{ key, kind: "choice", value: String(value ?? type.options[0]), options: type.options }]
-    }
+      if (first !== undefined) return [[key, choice(isText(value) ? value : first, [first, ...rest])]]
 
-    if (control.type === "boolean" || isBoolean(value)) return [{ key, kind: "toggle", value: value === true }]
+      if (control.type === "boolean" || isBoolean(value)) return [[key, toggle(value === true, { random: true })]]
 
-    if (control.type === "number" || control.type === "range" || isNumber(value)) {
+      if (control.type !== "number" && control.type !== "range" && !isNumber(value)) return []
+
       const start = isNumber(value) ? value : 0
 
       return [
-        {
+        [
           key,
-          kind: "number",
-          value: start,
-          min: "min" in control && control.min !== undefined ? control.min : Math.min(0, start),
-          max: "max" in control && control.max !== undefined ? control.max : Math.max(10, start * 4),
-          step: "step" in control && control.step !== undefined ? control.step : Number.isInteger(start) ? 1 : 0.01,
-        },
+          knob(start, {
+            min: "min" in control && control.min !== undefined ? control.min : Math.min(0, start),
+            max: "max" in control && control.max !== undefined ? control.max : Math.max(10, start * 4),
+            step: "step" in control && control.step !== undefined ? control.step : Number.isInteger(start) ? 1 : 0.01,
+          }),
+        ],
       ]
-    }
+    }),
+  )
+}
 
-    if (control.type === "text" || isText(value)) return [{ key, kind: "text", value: isText(value) ? value : "" }]
+/** The values a state gives those knobs. */
+export function knobArgs(fields: { [key: string]: Field }, args: StoryArgs) {
+  return Object.fromEntries(
+    Object.keys(fields).flatMap((key) => {
+      const value = args[key]
 
-    return []
-  })
+      return isText(value) || isNumber(value) || isBoolean(value) ? [[key, value]] : []
+    }),
+  )
 }
 
 // Storybook's name for an export: `QuestionAndPermission` reads "Question And Permission".
