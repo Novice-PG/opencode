@@ -22,7 +22,8 @@ export function storyIndex(roots: string[]): Plugin {
       )
 
       const entries = files.flatMap((file, index) => {
-        const source = readFileSync(file, "utf8")
+        // A Windows checkout may have CRLF line endings, which the meta block's closing `\n}\n` would miss.
+        const source = readFileSync(file, "utf8").replaceAll("\r\n", "\n")
         const meta = source.slice(source.indexOf("export default {")).split(/\n}\n/)[0] ?? ""
         const kind = meta.match(/[{\s,]id:\s*"([^"]+)"/)?.[1] ?? meta.match(/[{\s,]title:\s*"([^"]+)"/)?.[1]
 
