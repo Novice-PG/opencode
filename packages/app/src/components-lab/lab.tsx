@@ -21,10 +21,17 @@ import { choice, defineControls, toolbar, type Field } from "knobs"
 import { commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
 import { Tree } from "knobs/ui/solid"
 import { useLanguage } from "@/runtime/i18n/language"
-import { ServerProvider } from "@/runtime/server/current"
+import { CommentsProvider } from "@/composer/comments"
+import { ComposerPersistenceProvider } from "@/composer/persistence"
+import { ModelsProvider } from "@/providers/models/models"
+import { Contribution } from "@/runtime/extension/render"
+import { ServerProvider, useServer } from "@/runtime/server/current"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useGlobal } from "@/runtime/server/runtime"
 import { SessionRouteFrame } from "@/session/session-frame"
+import { SessionUIProvider } from "@/shell/routes/session-ui-provider"
+import { FileProvider } from "@/workspaces/files/model"
+import { LocationProvider } from "@/workspaces/location"
 import {
   fileName,
   knobArgs,
@@ -324,41 +331,79 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
       class="flex size-full overflow-auto bg-v2-background-bg-base"
       classList={{ "items-center justify-center p-8": !entry.fullscreen, "flex-col": entry.fullscreen }}
     >
-      <Server>
-        <Show when={render()} keyed fallback={language.t("lab.empty")}>
-          {(fn) => (
-            <ErrorBoundary
-              fallback={(error, reset) => {
-                // A failing state does not stick: the next state or edit tries again.
-                createEffect(on(() => ({ ...args }), reset, { defer: true }))
+      <Workspace>
+        <Extension file={entry.file}>
+          <Show when={render()} keyed fallback={language.t("lab.empty")}>
+            {(fn) => (
+              <ErrorBoundary
+                fallback={(error, reset) => {
+                  // A failing state does not stick: the next state or edit tries again.
+                  createEffect(on(() => ({ ...args }), reset, { defer: true }))
 
-                return (
-                  <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
-                    {String(error)}
-                  </pre>
-                )
-              }}
-            >
-              {untrack(() => fn(args))}
-            </ErrorBoundary>
-          )}
-        </Show>
-      </Server>
+                  return (
+                    <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
+                      {String(error)}
+                    </pre>
+                  )
+                }}
+              >
+                {untrack(() => fn(args))}
+              </ErrorBoundary>
+            )}
+          </Show>
+        </Extension>
+      </Workspace>
     </div>
   )
 }
 
-// Stories that read the current server (a question dock replying, a provider list) get the first healthy one.
-function Server(props: { children: JSX.Element }) {
+/**
+ * The provider stack of a draft session in the first project of the first healthy server, so a story that reads the
+ * server, models, location or composer state renders as it does in the app. Without a server, stories render bare.
+ */
+function Workspace(props: { children: JSX.Element }) {
   const servers = useServers()
   const global = useGlobal()
   const healthy = () => servers.list.find((conn) => global.servers.health[ServerConnection.key(conn)]?.healthy)
 
   return (
     <Show when={healthy()} keyed fallback={props.children}>
-      {(conn) => <ServerProvider conn={conn}>{props.children}</ServerProvider>}
+      {(conn) => (
+        <ServerProvider conn={conn}>
+          <Project>{props.children}</Project>
+        </ServerProvider>
+      )}
     </Show>
   )
+}
+
+function Project(props: { children: JSX.Element }) {
+  const server = useServer()
+
+  return (
+    <Show when={server.ctx.projects.list()[0]?.worktree} keyed fallback={props.children}>
+      {(directory) => (
+        <ModelsProvider directory={directory}>
+          <LocationProvider directory={directory}>
+            <SessionUIProvider directory={directory} server={server.key}>
+              <FileProvider>
+                <ComposerPersistenceProvider>
+                  <CommentsProvider>{props.children}</CommentsProvider>
+                </ComposerPersistenceProvider>
+              </FileProvider>
+            </SessionUIProvider>
+          </LocationProvider>
+        </ModelsProvider>
+      )}
+    </Show>
+  )
+}
+
+// A story of an extension renders as its contributions do: inside that extension's context from the app's host.
+function Extension(props: { file: string; children: JSX.Element }) {
+  const id = props.file.match(/gui-extensions\/src\/([^/]+)\//)?.[1]
+
+  return id ? <Contribution extension={id}>{() => props.children}</Contribution> : props.children
 }
 
 function section(title: string) {
