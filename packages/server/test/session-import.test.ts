@@ -6,6 +6,7 @@ import { ServerFetch } from "../src/fetch"
 
 const SessionResponse = Schema.Struct({ data: Schema.toEncoded(Session.Info) })
 const SessionsResponse = Schema.Struct({ data: Schema.Array(Schema.toEncoded(Session.Info)) })
+const MessageIDsResponse = Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.String })) })
 
 const setup = Effect.gen(function* () {
   const handler = yield* ServerFetch.make({
@@ -49,6 +50,35 @@ it.live("preserves imported parentID through HTTP import, read, and parent filte
       children: children.data.map((child) => child.id),
     }).toEqual({ imported: parent.data.id, read: parent.data.id, children: [id] })
   }).pipe(Effect.scoped),
+)
+
+it.live(
+  "imports a session with more messages than one SQLite statement can bind",
+  () =>
+    Effect.gen(function* () {
+      const request = yield* setup
+      const template = Schema.decodeUnknownSync(SessionResponse)(yield* request("/api/session", { title: "Large" }))
+      const id = Session.ID.create()
+      const count = 10_000
+      yield* request("/api/experimental/session/import", {
+        info: { ...template.data, id, title: "Imported large" },
+        messages: Array.from({ length: count }, (_, index) => ({
+          id: `msg_large_${index}`,
+          type: "user",
+          text: `message ${index}`,
+          time: { created: index },
+        })),
+      })
+      const first = Schema.decodeUnknownSync(MessageIDsResponse)(
+        yield* request(`/api/session/${id}/message?order=asc&limit=1`),
+      )
+      expect(first.data.map((message) => message.id)).toEqual(["msg_large_0"])
+      const last = Schema.decodeUnknownSync(MessageIDsResponse)(
+        yield* request(`/api/session/${id}/message?order=desc&limit=1`),
+      )
+      expect(last.data.map((message) => message.id)).toEqual(["msg_large_9999"])
+    }).pipe(Effect.scoped),
+  60_000,
 )
 
 it.live("upgrades native data in transcripts exported before v2.1", () =>

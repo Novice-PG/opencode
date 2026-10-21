@@ -110,7 +110,14 @@ const layer = Layer.effect(
               commit: (seq) =>
                 Effect.gen(function* () {
                   if (messages.length > 0) {
-                    yield* db.insert(SessionMessageTable).values(messages).run().pipe(Effect.orDie)
+                    // SQLite binds at most 32,766 variables per statement and each row binds six
+                    // columns, so a large session cannot go through one insert.
+                    for (let index = 0; index < messages.length; index += MESSAGE_INSERT_BATCH)
+                      yield* db
+                        .insert(SessionMessageTable)
+                        .values(messages.slice(index, index + MESSAGE_INSERT_BATCH))
+                        .run()
+                        .pipe(Effect.orDie)
                     yield* Bus.reserveSequence(db, sessionID, seq + messages.length)
                   }
                   yield* db
@@ -161,6 +168,9 @@ export const node = makeGlobalNode({
   layer,
   deps: [App.node, Bus.node, Database.node, Project.node, Session.node],
 })
+
+/** Rows per insert: six bound columns per row stays well under SQLite's 32,766 statement variables. */
+const MESSAGE_INSERT_BATCH = 1_000
 
 function isSettled(message: SessionMessage.Info) {
   if (message.type === "assistant") return message.time.completed !== undefined
