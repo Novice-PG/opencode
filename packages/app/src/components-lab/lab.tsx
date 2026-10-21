@@ -105,27 +105,12 @@ export default function ComponentsLab() {
   const [catalog] = createResource(loadCatalog)
   const [scheme, setScheme] = createSignal<"dark" | "light">("dark")
   let palette: CommandPalette | undefined
+  let toggle: ((id: string) => void) | undefined
 
   const entries = () => catalog()?.entries ?? []
   const selected = createMemo(() => entries().find((entry) => entry.file === params.story))
 
-  const rows = createMemo(() =>
-    [...new Set(entries().map((entry) => section(entry.title)))].map(
-      (name): Row => ({
-        id: `section:${name}`,
-        label: name,
-        children: entries()
-          .filter((entry) => section(entry.title) === name)
-          .map((entry) => ({
-            id: entry.file,
-            label: entry.title.split("/").slice(1).join(" / ") || entry.title,
-            // Files may share a title, as Storybook merges them; the file name tells them apart.
-            detail:
-              entries().filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
-          })),
-      }),
-    ),
-  )
+  const rows = createMemo(() => folder(entries(), []))
 
   const search = () => {
     palette?.dispose()
@@ -166,8 +151,14 @@ export default function ComponentsLab() {
         label={language.t("lab.components")}
         expanded={rows().map((row) => row.id)}
         selection={params.story ? [params.story] : []}
+        onReady={(tree) => {
+          // Opens the folders down to the story in the address, and later ones picked from the palette.
+          createEffect(() => params.story && tree.reveal(params.story))
+          toggle = (id) => tree.expand(id, !tree.isExpanded(id))
+        }}
         onSelect={(_, primary) => {
-          if (primary && !primary.startsWith("section:")) setParams({ story: primary })
+          if (!primary?.startsWith("folder:")) return primary && setParams({ story: primary })
+          toggle?.(primary)
         }}
       />
     </Show>
@@ -412,8 +403,27 @@ function Extension(props: { file: string; children: JSX.Element }) {
   return id ? <Contribution extension={id}>{() => props.children}</Contribution> : props.children
 }
 
-function section(title: string) {
-  return title.split("/")[0] ?? title
+/** The tree under `path`: a folder for each further title segment and a row for each story, by name. */
+function folder(entries: LabEntry[], path: string[]): Row[] {
+  const depth = path.length
+  const inside = entries.filter((entry) => path.every((segment, index) => entry.title.split("/")[index] === segment))
+  const names = [...new Set(inside.flatMap((entry) => entry.title.split("/").slice(depth, -1).slice(0, 1)))]
+
+  return [
+    ...names.map((name) => ({
+      id: `folder:${[...path, name].join("/")}`,
+      label: name,
+      children: folder(inside, [...path, name]),
+    })),
+    ...inside
+      .filter((entry) => entry.title.split("/").length === depth + 1)
+      .map((entry) => ({
+        id: entry.file,
+        label: entry.title.split("/").at(-1) ?? entry.title,
+        // Files may share a title, as Storybook merges them; the file name tells them apart.
+        detail: inside.filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
+      })),
+  ].toSorted((a, b) => a.label.localeCompare(b.label))
 }
 
 // knobs' split takes each pane's content as a node; Solid keeps it reactive where it sits.
