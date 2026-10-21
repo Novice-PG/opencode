@@ -15,6 +15,7 @@ import {
 } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { Dynamic, insert } from "solid-js/web"
+import { DialogProvider } from "@opencode/ui/context/dialog"
 import { useTheme } from "@opencode/ui/theme"
 import { motionGlobals } from "@opencode/ui/motion-tuning"
 import { choice, defineControls, toolbar, type Field } from "knobs"
@@ -236,6 +237,7 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
   const names = entry.states.map((state) => state.name)
   const [args, setArgs] = createStore<StoryArgs>(stateArgs(entry, 0))
   const [index, setIndex] = createSignal(0)
+  const [canvas, setCanvas] = createSignal<HTMLDivElement>()
   const component = entry.component
   const fallback = component && ((values: StoryArgs) => <Dynamic component={component} {...values} />)
   // Switching to a state that shares the current render function keeps the mounted instance, so its transitions play.
@@ -327,30 +329,34 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
     )
 
   return (
+    // Contained layout makes the canvas hold its stories' dialogs, which the provider below portals into it.
     <div
-      class="flex size-full overflow-auto bg-v2-background-bg-base"
+      ref={setCanvas}
+      class="flex size-full overflow-auto bg-v2-background-bg-base [contain:layout]"
       classList={{ "items-center justify-center p-8": !entry.fullscreen, "flex-col": entry.fullscreen }}
     >
       <Workspace>
         <Extension file={entry.file}>
-          <Show when={render()} keyed fallback={language.t("lab.empty")}>
-            {(fn) => (
-              <ErrorBoundary
-                fallback={(error, reset) => {
-                  // A failing state does not stick: the next state or edit tries again.
-                  createEffect(on(() => ({ ...args }), reset, { defer: true }))
+          <DialogProvider container={canvas()}>
+            <Show when={render()} keyed fallback={language.t("lab.empty")}>
+              {(fn) => (
+                <ErrorBoundary
+                  fallback={(error, reset) => {
+                    // A failing state does not stick: the next state or edit tries again.
+                    createEffect(on(() => ({ ...args }), reset, { defer: true }))
 
-                  return (
-                    <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
-                      {String(error)}
-                    </pre>
-                  )
-                }}
-              >
-                {untrack(() => fn(args))}
-              </ErrorBoundary>
-            )}
-          </Show>
+                    return (
+                      <pre class="max-w-full whitespace-pre-wrap font-mono text-[12px] leading-4 text-v2-state-fg-danger">
+                        {String(error)}
+                      </pre>
+                    )
+                  }}
+                >
+                  {untrack(() => fn(args))}
+                </ErrorBoundary>
+              )}
+            </Show>
+          </DialogProvider>
         </Extension>
       </Workspace>
     </div>

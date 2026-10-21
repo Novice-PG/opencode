@@ -36,17 +36,19 @@ type Active = {
 
 const Context = createContext<ReturnType<typeof init>>()
 
-// Lets the dialog rendered in a layer opt out of closing on a backdrop click, or ask for a longer exit animation.
+// Lets the dialog rendered in a layer opt out of closing on a backdrop click, or ask for a longer exit animation. A
+// contained layer also says which element holds it, so presses outside that element leave the dialog open.
 const LayerContext = createContext<{
   setBackdropDismiss: (value: boolean) => void
   setExitDuration: (ms: number) => void
+  container?: HTMLElement
 }>()
 
 export function useDialogLayer() {
   return useContext(LayerContext)
 }
 
-function init() {
+function init(container: () => HTMLElement | undefined) {
   const [stack, setStack] = createSignal<Active[]>([])
   // A dialog is closing from the moment its close starts until its exit animation ends and it is disposed.
   const closing = new Map<string, ReturnType<typeof setTimeout> | undefined>()
@@ -126,6 +128,11 @@ function init() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
 
+      // Escape in the page around a contained stack belongs to the page.
+      const within = container()
+
+      if (within && event.target instanceof Node && !within.contains(event.target)) return
+
       // A control that cancels its own edit on Escape, such as an inline rename, keeps the dialog open.
       if (event.target instanceof Element && event.target.closest("[data-owns-escape]")) return
       dismiss()
@@ -170,13 +177,13 @@ function init() {
 
         return (
           <Kobalte
-            modal={top()?.id === id}
+            modal={!container() && top()?.id === id}
             open={!closing()}
             onOpenChange={(open: boolean) => {
               if (!open) dismiss(id)
             }}
           >
-            <Kobalte.Portal>
+            <Kobalte.Portal mount={container()}>
               <Kobalte.Overlay
                 data-component="dialog-overlay"
                 style={{ "z-index": zIndex() }}
@@ -197,7 +204,9 @@ function init() {
                   "pointer-events": "none",
                 }}
               >
-                <LayerContext.Provider value={{ setBackdropDismiss, setExitDuration: (ms) => (exit = ms) }}>
+                <LayerContext.Provider
+                  value={{ setBackdropDismiss, setExitDuration: (ms) => (exit = ms), container: container() }}
+                >
                   {element()}
                 </LayerContext.Provider>
               </div>
@@ -291,8 +300,12 @@ function returnFocus(focus: FocusReturn | undefined, layer: HTMLElement | undefi
   selection?.addRange(focus.range)
 }
 
-export function DialogProvider(props: ParentProps) {
-  const ctx = init()
+/**
+ * `container` keeps the dialogs inside one element, as a component preview does: they render in it, non-modal, and the
+ * page around it stays usable. The element must be a containing block for fixed positioning (e.g. `contain: layout`).
+ */
+export function DialogProvider(props: ParentProps<{ container?: HTMLElement }>) {
+  const ctx = init(() => props.container)
 
   return (
     <Context.Provider value={ctx}>
