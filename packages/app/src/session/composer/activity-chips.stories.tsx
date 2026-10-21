@@ -8,7 +8,7 @@ import {
   largeCompletedDocument,
 } from "@opencode/session-ui/storybook"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
-import { createMemo, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionPreview } from "@/session/story-model"
 import type { SessionActivityItem } from "./activity-chips"
@@ -59,20 +59,24 @@ const pin = (behavior: ScrollBehavior) =>
     timeline?.scrollTo({ top: timeline.scrollHeight, behavior })
   }, 150)
 
-const preview = (stage: number, subagentCount: number, shellCount: number) => () => {
-  const value = liveDocument(stages[stage])
+type PreviewArgs = { stage: number; subagents: number; shells: number }
+
+// Driven by args, so moving between these stories updates the same capsule and its transitions play.
+function Preview(props: PreviewArgs) {
+  const value = createMemo(() => liveDocument(stages[props.stage] ?? stages[0]))
 
   onMount(() => pin("auto"))
+  createEffect(on(value, () => pin("smooth"), { defer: true }))
 
   return (
     <SessionPreview
       title="Run background work"
       description="opencode · activity chips"
-      document={value}
+      document={value()}
       timelineDetail={timelineDetail}
       activity={{
-        subagents: Array.from({ length: subagentCount }, (_, index) => subagentItem(index)),
-        shells: Array.from({ length: shellCount }, (_, index) => shellItem(index)),
+        subagents: Array.from({ length: props.subagents }, (_, index) => subagentItem(index)),
+        shells: Array.from({ length: props.shells }, (_, index) => shellItem(index)),
       }}
     />
   )
@@ -217,6 +221,13 @@ function LiveActivity() {
 export default {
   title: "OpenCode/Session/Activity chips",
   id: "session-activity-chips",
+  render: (args: PreviewArgs) => <Preview {...args} />,
+  args: { stage: 0, subagents: 0, shells: 0 },
+  argTypes: {
+    stage: { control: { type: "range", min: 0, max: 8, step: 1 } },
+    subagents: { control: { type: "range", min: 0, max: 12, step: 1 } },
+    shells: { control: { type: "range", min: 0, max: 4, step: 1 } },
+  },
   parameters: {
     layout: "fullscreen",
     docs: {
@@ -228,16 +239,16 @@ export default {
   },
 }
 
-export const NoActivity = { render: preview(0, 0, 0) }
+export const NoActivity = { args: { stage: 0, subagents: 0, shells: 0 } }
 
-export const OneSubagent = { render: preview(1, 1, 0) }
+export const OneSubagent = { args: { stage: 1, subagents: 1, shells: 0 } }
 
-export const TwoSubagents = { render: preview(2, 2, 0) }
+export const TwoSubagents = { args: { stage: 2, subagents: 2, shells: 0 } }
 
-export const OneShell = { render: preview(7, 0, 1) }
+export const OneShell = { args: { stage: 7, subagents: 0, shells: 1 } }
 
-export const SubagentsAndShells = { render: preview(4, 2, 2) }
+export const SubagentsAndShells = { args: { stage: 4, subagents: 2, shells: 2 } }
 
-export const ManySubagents = { render: preview(4, 12, 2) }
+export const ManySubagents = { args: { stage: 4, subagents: 12, shells: 2 } }
 
 export const Live = { render: () => <LiveActivity /> }

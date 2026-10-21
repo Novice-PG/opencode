@@ -10,8 +10,8 @@ const prompts = [
   "Remove the unused Alpha helper",
 ]
 
-const view = (count: number): SessionQueueView => ({
-  rows: () => prompts.slice(0, count).map((text, index) => ({ id: `queued_${index}`, text, attachments: 0 })),
+const view = (count: () => number): SessionQueueView => ({
+  rows: () => prompts.slice(0, count()).map((text, index) => ({ id: `queued_${index}`, text, attachments: 0 })),
   editing: () => undefined,
   working: () => true,
   busy: () => false,
@@ -25,6 +25,13 @@ const view = (count: number): SessionQueueView => ({
 export default {
   title: "OpenCode/Session/Queue panel",
   id: "session-queue-panel",
+  render: (args: { count: number }) => (
+    <div class="w-[560px]">
+      <SessionQueuePanel queue={view(() => args.count)} />
+    </div>
+  ),
+  args: { count: 3 },
+  argTypes: { count: { control: { type: "range", min: 0, max: prompts.length, step: 1 } } },
   parameters: {
     layout: "centered",
     docs: {
@@ -35,18 +42,6 @@ export default {
   },
 }
 
-export const Short = {
-  render: () => (
-    <div class="w-[560px]">
-      <SessionQueuePanel queue={view(3)} />
-    </div>
-  ),
-}
+export const Short = { args: { count: 3 } }
 
-export const Scrolling = {
-  render: () => (
-    <div class="w-[560px]">
-      <SessionQueuePanel queue={view(6)} />
-    </div>
-  ),
-}
+export const Scrolling = { args: { count: 6 } }

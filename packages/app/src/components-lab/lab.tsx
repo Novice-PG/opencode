@@ -156,7 +156,17 @@ export default function ComponentsLab() {
     if (failed) toast(language.plural("lab.failed", failed))
   })
 
-  const inspector = pane(() => undefined)
+  // The story's knobs panel mounts in `controls`; a story with no states or args says so instead.
+  const controls = document.createElement("div")
+
+  const inspector = pane(() => [
+    controls,
+    <Show when={selected() && !hasControls(selected()!)}>
+      <div class="px-3 py-6 text-center text-[13px] leading-4 text-v2-text-text-faint">
+        {language.t("lab.noControls")}
+      </div>
+    </Show>,
+  ])
 
   const stories = pane(() => (
     <Show when={catalog()}>
@@ -189,7 +199,7 @@ export default function ComponentsLab() {
         </div>
       }
     >
-      {(entry) => <Stage entry={entry} inspector={inspector} scheme={untrack(scheme)} />}
+      {(entry) => <Stage entry={entry} inspector={controls} scheme={untrack(scheme)} />}
     </Show>
   ))
 
@@ -447,6 +457,10 @@ function folder(entries: LabEntry[], path: string[]): Row[] {
 }
 
 // knobs' split takes each pane's content as a node; Solid keeps it reactive where it sits.
+function hasControls(entry: LabEntry) {
+  return entry.states.length > 1 || Object.keys(labFields(entry)).length > 0
+}
+
 function pane(content: () => JSX.Element) {
   const element = document.createElement("div")
 
