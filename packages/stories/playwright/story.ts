@@ -17,7 +17,7 @@ export const story = test.extend<{
 }>({
   mount: async ({ page }, use) => {
     await use(async (id, options) => {
-      const query = new URLSearchParams({ id, viewMode: "story" })
+      const query = new URLSearchParams({ id })
       if (options?.args) {
         query.set(
           "args",
@@ -26,16 +26,16 @@ export const story = test.extend<{
             .join(";"),
         )
       }
-      // No test reads addon-a11y results, so skip its axe run after every render. Switching preview.tsx to
-      // `a11y.test: "error"` would therefore not be enforced by these tests. Caller globals still win.
-      query.set(
-        "globals",
-        Object.entries({ "a11y.manual": "!true", ...options?.globals })
-          .map(([key, value]) => `${key}:${value}`)
-          .join(";"),
-      )
-      await page.goto(`/iframe.html?${query}`)
-      const root = page.locator("#storybook-root")
+      if (options?.globals) {
+        query.set(
+          "globals",
+          Object.entries(options.globals)
+            .map(([key, value]) => `${key}:${value}`)
+            .join(";"),
+        )
+      }
+      await page.goto(`/?${query}`)
+      const root = page.locator("#story-root")
       await expect(root).toBeVisible({ timeout: 30_000 })
       return root
     })

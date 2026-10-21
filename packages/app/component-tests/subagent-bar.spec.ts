@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 story("a subagent session shows its model where the composer would be", async ({ mount, page }) => {
   await mount("app-current-session-surface--child-session")

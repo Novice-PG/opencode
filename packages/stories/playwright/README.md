@@ -1,12 +1,12 @@
 # Component browser tests
 
-Production Solid components are tested through their existing Storybook stories without booting the app, configuring a server, seeding browser storage, or navigating unrelated routes.
+Production Solid components are tested through their existing `*.stories.tsx` stories without booting the app, configuring a server, seeding browser storage, or navigating unrelated routes.
 
 Keep each spec in the package that owns its production component:
 
 - `packages/session-ui/component-tests/` owns timeline, tool, notice, reasoning, lifecycle, and review coverage.
 - `packages/app/component-tests/` owns Composer and other app-only component coverage.
-- `packages/storybook/playwright/` owns the shared Storybook startup configuration and `story` mount fixture.
+- `packages/stories/` owns the story server (a plain Vite page that renders one story with fixed data in place of the server, router and project), the shared Playwright configuration and the `story` mount fixture.
 
 Run a package's isolated browser suite from that package:
 
@@ -30,14 +30,14 @@ bun turbo test:components --filter=@opencode/session-ui
 bun turbo test:components --filter=@opencode/app
 ```
 
-Component browser coverage deliberately remains separate from each package's default `test` script and from `packages/app`'s `test:e2e`, so expensive Storybook checks can be scheduled independently from required unit and full-app journey CI. CI runs each suite in its own leg of the `e2e` job in `.github/workflows/test.yml` (`session-ui-components` and `app-components`). Set `PLAYWRIGHT_STORYBOOK_URL` to reuse an existing Storybook instance or `PLAYWRIGHT_STORYBOOK_PORT` to choose its port.
+Component browser coverage deliberately remains separate from each package's default `test` script and from `packages/app`'s `test:e2e`, so expensive browser checks can be scheduled independently from required unit and full-app journey CI. CI runs each suite in its own leg of the `e2e` job in `.github/workflows/test.yml` (`session-ui-components` and `app-components`). Set `PLAYWRIGHT_STORIES_URL` to reuse a running story server (`bun --cwd packages/stories dev`) or `PLAYWRIGHT_STORIES_PORT` to choose its port.
 
 ## Adding a test
 
 Keep inspectable scenarios next to the production component in a `*.stories.tsx` file. A story owns its fixtures, providers, state, and callbacks; its package-local spec owns user-visible interactions and assertions.
 
 ```ts
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 // Moved from packages/app/e2e/regression/session-timeline-context-state.spec.ts
 story("preserves collapsed state while a tool completes", async ({ mount }) => {
@@ -52,7 +52,7 @@ story("preserves collapsed state while a tool completes", async ({ mount }) => {
 })
 ```
 
-The story ID is the Storybook component ID followed by `--` and the kebab-cased story export. Open the same story in Storybook to inspect exactly the scenario covered by the browser test. Preserve an original-source-path comment for every migrated E2E case.
+The story ID is the story file's meta `id` (or its title, kebab-cased) followed by `--` and the kebab-cased story export, as Storybook named them. Open `http://127.0.0.1:6006/?id=<story id>` on a running story server, or the story in the app's components lab, to inspect exactly the scenario covered by the browser test. Preserve an original-source-path comment for every migrated E2E case.
 
 Keep cross-route navigation, remote-server ownership, persistent session state, full-app virtualization, and workflows spanning independent surfaces in `packages/app/e2e/`.
 

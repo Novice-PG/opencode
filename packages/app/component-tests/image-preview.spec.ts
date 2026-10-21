@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 const paths = {
   Escape: (page) => page.keyboard.press("Escape"),

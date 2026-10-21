@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const port = Number(process.env.PLAYWRIGHT_STORYBOOK_PORT ?? 6006)
-const baseURL = process.env.PLAYWRIGHT_STORYBOOK_URL ?? `http://127.0.0.1:${port}`
+const port = Number(process.env.PLAYWRIGHT_STORIES_PORT ?? 6006)
+const baseURL = process.env.PLAYWRIGHT_STORIES_URL ?? `http://127.0.0.1:${port}`
 
 export function componentConfig(directory: string) {
   return defineConfig({
@@ -15,9 +15,9 @@ export function componentConfig(directory: string) {
     workers: process.env.CI ? 2 : undefined,
     reporter: [["html", { outputFolder: `${directory}/component-tests/playwright-report`, open: "never" }], ["line"]],
     webServer: {
-      // Storybook runs on Node: Bun 1.4.2's node:http crashes the server with an uncaught "write after end" when a
-      // browser abandons pipelined requests (oven-sh/bun#40350, fixed in Bun 1.4.3).
-      command: `bun run --cwd ${directory}/../storybook storybook -- --port ${port} --ci --no-open`,
+      // Vite runs on Node: Bun 1.4.2's node:http crashes the server with an uncaught "write after end" when a browser
+      // abandons pipelined requests (oven-sh/bun#40350, fixed in Bun 1.4.3).
+      command: `bun run --cwd ${directory}/../stories dev --port ${port} --strictPort`,
       url: baseURL,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

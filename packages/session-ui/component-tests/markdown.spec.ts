@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, sourceURL, story } from "../../storybook/playwright/story"
+import { expect, sourceURL, story } from "../../stories/playwright/story"
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4ioAAAAASUVORK5CYII=",

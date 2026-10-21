@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 story("marks pending metadata without badging delivered, starting, or queued prompts", async ({ mount, page }) => {
   const timeline = await mount("current-prompt-message--pending")

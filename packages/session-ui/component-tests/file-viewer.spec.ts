@@ -1,4 +1,4 @@
-import { expect, sourceURL, story } from "../../storybook/playwright/story"
+import { expect, sourceURL, story } from "../../stories/playwright/story"
 
 const fixture = sourceURL(new URL("./file-viewer.fixture.tsx", import.meta.url))
 

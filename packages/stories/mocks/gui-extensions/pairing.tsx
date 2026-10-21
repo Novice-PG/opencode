@@ -1,9 +1,9 @@
 import { useDialog } from "@opencode/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import type { JSX } from "solid-js"
-import { ExtensionContext, useExtension, type IpcClient } from "../../../../gui-extensions/src/sdk"
-import type { Pairing } from "../../../../gui-extensions/src/pairing/contract"
-import type { PairingServer } from "../../../../gui-extensions/src/pairing/page"
+import { ExtensionContext, useExtension, type IpcClient } from "../../../gui-extensions/src/sdk"
+import type { Pairing } from "../../../gui-extensions/src/pairing/contract"
+import type { PairingServer } from "../../../gui-extensions/src/pairing/page"
 // The pairing page renders inside the app's settings page, which brings these styles.
 import "@/settings/settings.css"
 

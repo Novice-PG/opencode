@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 story("returns focus to a menu trigger without a ring after a pointer open", async ({ mount, page }) => {
   await mount("ui-menu--basic")

@@ -11,12 +11,12 @@ import { PlatformProvider, usePlatform, type Platform } from "@/runtime/platform
 import { ServerConnection } from "@/runtime/server/registry"
 import type { ServerCollectionController } from "@/servers/registry/controller"
 import { ExtensionServerRow } from "@/servers/registry/extension-row"
-import { builtins } from "../../../../gui-extensions/src/renderer"
-import type { IpcClient, Layout } from "../../../../gui-extensions/src/sdk"
-import type { Ssh, SshConfig, SshHttp, SshItem, SshStart } from "../../../../gui-extensions/src/ssh/contract"
-import { DialogSsh } from "../../../../gui-extensions/src/ssh/dialog"
-import { createSshController } from "../../../../gui-extensions/src/ssh/state"
-import { createStoryHostApis } from "../../extension"
+import { builtins } from "../../../gui-extensions/src/renderer"
+import type { IpcClient, Layout } from "../../../gui-extensions/src/sdk"
+import type { Ssh, SshConfig, SshHttp, SshItem, SshStart } from "../../../gui-extensions/src/ssh/contract"
+import { DialogSsh } from "../../../gui-extensions/src/ssh/dialog"
+import { createSshController } from "../../../gui-extensions/src/ssh/state"
+import { createStoryHostApis } from "../../src/extension"
 // Settings rows render inside the app's settings page, which brings these styles.
 import "@/settings/settings.css"
 

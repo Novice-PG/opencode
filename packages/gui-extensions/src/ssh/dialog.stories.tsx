@@ -16,7 +16,7 @@ import {
   type SshItem,
   type SshPlatform,
   type SshState,
-} from "../../../storybook/.storybook/mocks/gui-extensions/ssh"
+} from "../../../stories/mocks/gui-extensions/ssh"
 
 type FixtureState = { item?: SshItem; before?: SshItem; step: number; timer?: ReturnType<typeof setTimeout> }
 

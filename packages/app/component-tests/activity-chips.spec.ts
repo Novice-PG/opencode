@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 story("shows how long each background item has been running, ticking while open", async ({ mount, page }) => {
   await page.clock.install({ time: new Date("2026-10-19T12:00:00Z") })

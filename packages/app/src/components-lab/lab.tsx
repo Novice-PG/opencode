@@ -468,7 +468,7 @@ function folder(entries: LabEntry[], path: string[]): Row[] {
             {
               id: entry.file,
               label: entry.title.split("/").at(-1) ?? entry.title,
-              // Files may share a title, as Storybook merges them; the file name tells them apart.
+              // Files may share a title; the file name tells them apart.
               detail:
                 inside.filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
             },

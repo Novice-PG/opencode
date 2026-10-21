@@ -43,7 +43,7 @@ export function ExtensionStory(props: { file: unknown; children: JSX.Element }) 
       document.head.append(sheet)
       onCleanup(() => sheet.remove())
     })
-  // Storybook renders a story only during the first synchronous render, so the context cannot wait for the async
+  // The frame renders a story in one synchronous pass, so the context cannot wait for the async
   // extension host. It follows the host's rules: the extension's catalog first, then the app's shared keys.
   return <ExtensionContext.Provider value={createStoryContext(definition)}>{props.children}</ExtensionContext.Provider>
 }

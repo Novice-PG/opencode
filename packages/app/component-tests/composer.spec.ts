@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 story("cycles full prompts with plain arrows without opening the picker", async ({ mount, page }) => {
   const component = await mount("opencode-composer-flow--prompt-history")
@@ -506,7 +506,7 @@ story("ignores a detached suggestion boundary", async ({ mount }) => {
 })
 
 // ThemeProvider writes resolved token values into a <style> block, so toggling data-color-scheme by hand
-// leaves every --v2-* variable at its previous value. Switch themes through the Storybook global instead.
+// leaves every --v2-* variable at its previous value. Switch themes through the theme global instead.
 for (const [theme, background] of [
   ["light", "rgb(255, 255, 255)"],
   ["dark", "rgb(36, 36, 36)"],

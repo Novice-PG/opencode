@@ -1,4 +1,4 @@
-import { expect, sourceURL, story } from "../../storybook/playwright/story"
+import { expect, sourceURL, story } from "../../stories/playwright/story"
 import type { Accessor, ParentProps } from "solid-js"
 import type { Command, MenuItem } from "@opencode/gui-extensions/sdk"
 import type { Item } from "../src/runtime/extension/host"
@@ -145,7 +145,7 @@ story.beforeEach(async ({ mount, page }) => {
             onSelect: props.review,
           },
         ])
-        // Storybook aliases the app's command hook to a no-op. Bridge the real extension contributions
+        // The story server aliases the app's command hook to a no-op. Bridge the real extension contributions
         // to the real dispatcher imported by source URL, so the shortcut runs rather than its alias.
         command.register("fixture-extensions", () =>
           extensions.items(sdk.Command).map((item: Item<Command>) => {

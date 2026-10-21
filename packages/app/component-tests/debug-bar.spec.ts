@@ -1,4 +1,4 @@
-import { expect, sourceURL, story } from "../../storybook/playwright/story"
+import { expect, sourceURL, story } from "../../stories/playwright/story"
 
 const modules = {
   fixture: sourceURL(new URL("./extension-host.fixture.tsx", import.meta.url)),

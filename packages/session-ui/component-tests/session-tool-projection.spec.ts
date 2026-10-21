@@ -1,4 +1,4 @@
-import { expect, story } from "../../storybook/playwright/story"
+import { expect, story } from "../../stories/playwright/story"
 
 // Moved from packages/app/e2e/regression/session-timeline-projection.spec.ts
 story("renders every admitted tool family and hides timeline-only exclusions", async ({ mount }) => {
@@ -198,9 +198,12 @@ story("keeps long execute calls inside the tool and shows the script output", as
 
   const overflow = await tool.evaluate((element) => {
     const calls = element.querySelector('[data-component="execute-tool-calls"]')
+
     if (!calls) return Number.NaN
+
     return calls.getBoundingClientRect().right - element.getBoundingClientRect().right
   })
+
   expect(overflow).toBeLessThanOrEqual(0)
 })
 
