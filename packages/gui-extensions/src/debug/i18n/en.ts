@@ -37,6 +37,8 @@ export default {
   "motion.label": "KNOBS",
   "motion.title": "Knobs",
   "motion.tip": "Tune live. Changes persist on this device.",
+  "components.label": "COMPONENTS",
+  "components.tip": "Open the components lab: every story, with live controls and its states",
   "speed.label": "SPEED",
   "speed.tip": "Global animation speed. Click to step through 0.5× and 0.25× back to 1×.",
   "slow.label": "SLOW",

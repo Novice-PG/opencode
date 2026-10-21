@@ -1161,6 +1161,19 @@ export const dict = {
   "workspace.delete.confirm": "Delete “{{name}}”?",
   "workspace.delete.location": "Location",
   "workspace.delete.button": "Delete worktree",
+
+  "lab.back": "Back to the app",
+  "lab.search": "Search components",
+  "lab.failed.one": "{{count}} story file failed to load",
+  "lab.failed.other": "{{count}} story files failed to load",
+  "lab.step": "Step",
+  "lab.play": "Play",
+  "lab.pause": "Pause",
+  "lab.slow": "Slow",
+  "lab.light": "Light",
+  "lab.dark": "Dark",
+  "lab.empty": "This story has no component or render function",
+  "lab.pick": "Pick a component to preview its states",
 }
 
 export default dict

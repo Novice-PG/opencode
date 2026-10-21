@@ -756,6 +756,25 @@ export default function DebugBar(props: {
         </Show>
         <Show when={props.motion}>
           <div class="ms-auto flex items-center gap-[9px]">
+            {/* The lab's route exists only on the dev server. */}
+            {import.meta.env.DEV && (
+              <Tooltip appearance="compact" value={ctx.t("components.tip")} placement="top">
+                <a
+                  href="/components"
+                  classList={{
+                    "flex min-h-[20px] w-fit items-center rounded px-1.5 py-0.5 font-mono uppercase hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus": true,
+                    "bg-surface-raised-base text-text-strong": router.path().startsWith("/components"),
+                  }}
+                >
+                  <span
+                    dir="ltr"
+                    class="-translate-y-px text-[10px] leading-none font-black tracking-[0.04em] opacity-70"
+                  >
+                    {ctx.t("components.label")}
+                  </span>
+                </a>
+              </Tooltip>
+            )}
             <ToggleCell
               active={globals().speed !== 1}
               inline={props.inline}
