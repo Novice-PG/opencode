@@ -1174,6 +1174,7 @@ export const dict = {
   "lab.empty": "This story has no component or render function",
   "lab.pick": "Pick a component to preview its states",
   "lab.noControls": "This story has no controls",
+  "lab.grid": "Grid",
 }
 
 export default dict

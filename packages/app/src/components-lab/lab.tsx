@@ -5,8 +5,10 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createRoot,
   createSignal,
   ErrorBoundary,
+  getOwner,
   on,
   onCleanup,
   onMount,
@@ -20,7 +22,7 @@ import { DialogProvider } from "@opencode/ui/context/dialog"
 import { useTheme } from "@opencode/ui/theme"
 import { motionGlobals } from "@opencode/ui/motion-tuning"
 import { choice, defineControls, matchesCombo, toolbar, type Field } from "knobs"
-import { commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
+import { bento, commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
 import { Tree } from "knobs/ui/solid"
 import { useLanguage } from "@/runtime/i18n/language"
 import { CommentsProvider } from "@/composer/comments"
@@ -52,6 +54,8 @@ const hold = 1600
 const searchIcon = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>`
 
 const themeIcon = `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg>`
+
+const gridIcon = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg>`
 
 // Vite needs the patterns as literals in each call.
 const modules = import.meta.glob<StoryModule>([
@@ -102,14 +106,16 @@ type Row = { id: string; label: string; detail?: string; children?: Row[] }
 export default function ComponentsLab() {
   const language = useLanguage()
   const theme = useTheme()
-  const [params, setParams] = useSearchParams<{ story?: string }>()
+  const [params, setParams] = useSearchParams<{ story?: string; view?: string }>()
   const [catalog] = createResource(loadCatalog)
   const [scheme, setScheme] = createSignal<"dark" | "light">("dark")
   let palette: CommandPalette | undefined
   let toggle: ((id: string) => void) | undefined
 
   const entries = () => catalog()?.entries ?? []
-  const selected = createMemo(() => entries().find((entry) => entry.file === params.story))
+  const grid = () => params.view === "grid"
+  const selected = createMemo(() => (grid() ? undefined : entries().find((entry) => entry.file === params.story)))
+  const open = (file: string) => setParams({ story: file, view: undefined })
 
   const rows = createMemo(() => folder(entries(), []))
 
@@ -125,7 +131,7 @@ export default function ComponentsLab() {
         label: entry.title.split("/").join(" / "),
         hint: fileName(entry.file),
         keywords: entry.states.map((state) => state.name),
-        run: () => setParams({ story: entry.file }),
+        run: () => open(entry.file),
       })),
     })
     palette.open()
@@ -182,7 +188,7 @@ export default function ComponentsLab() {
           toggle = (id) => tree.expand(id, !tree.isExpanded(id))
         }}
         onSelect={(_, primary) => {
-          if (!primary?.startsWith("folder:")) return primary && setParams({ story: primary })
+          if (!primary?.startsWith("folder:")) return primary && open(primary)
           toggle?.(primary)
         }}
       />
@@ -191,15 +197,26 @@ export default function ComponentsLab() {
 
   const stage = pane(() => (
     <Show
-      when={selected()}
-      keyed
+      when={!grid()}
       fallback={
-        <div class="flex size-full items-center justify-center bg-v2-background-bg-base text-[13px] leading-4 text-v2-text-text-faint">
-          {language.t("lab.pick")}
-        </div>
+        <Grid
+          entries={entries().filter((entry) => entry.title.startsWith("UI/"))}
+          scheme={untrack(scheme)}
+          onOpen={open}
+        />
       }
     >
-      {(entry) => <Stage entry={entry} inspector={controls} scheme={untrack(scheme)} />}
+      <Show
+        when={selected()}
+        keyed
+        fallback={
+          <div class="flex size-full items-center justify-center bg-v2-background-bg-base text-[13px] leading-4 text-v2-text-text-faint">
+            {language.t("lab.pick")}
+          </div>
+        }
+      >
+        {(entry) => <Stage entry={entry} inspector={controls} scheme={untrack(scheme)} />}
+      </Show>
     </Show>
   ))
 
@@ -220,6 +237,11 @@ export default function ComponentsLab() {
           element: stories,
           actions: [
             { label: language.t("lab.search"), icon: searchIcon, shortcut: "Mod+K", run: search },
+            {
+              label: language.t("lab.grid"),
+              icon: gridIcon,
+              run: () => setParams({ view: grid() ? undefined : "grid" }),
+            },
             {
               label: language.t("lab.theme"),
               icon: themeIcon,
@@ -457,6 +479,72 @@ function folder(entries: LabEntry[], path: string[]): Row[] {
 }
 
 // knobs' split takes each pane's content as a node; Solid keeps it reactive where it sits.
+/** The library's stories side by side as a bento, each in its first state; picking one opens it on its own. */
+function Grid(props: { entries: LabEntry[]; scheme: "dark" | "light"; onOpen: (file: string) => void }) {
+  const language = useLanguage()
+  const owner = getOwner()
+  let element!: HTMLDivElement
+
+  onMount(() => {
+    const grid = bento(element, {
+      theme: props.scheme,
+      label: language.t("lab.grid"),
+      gap: 12,
+      rowHeight: 220,
+      // Grouped by the library's own folders: actions, forms, overlays and so on.
+      items: props.entries
+        .map((entry) => ({ entry, group: entry.file.match(/ui\/src\/([^/]+)\//)?.[1] ?? "" }))
+        .toSorted((a, b) => a.group.localeCompare(b.group))
+        .map(({ entry, group }) => ({
+          id: entry.file,
+          label: entry.title.split("/").at(-1),
+          group,
+          aspect: 4 / 3,
+          render: (tile: HTMLElement) =>
+            createRoot((dispose) => {
+              insert(tile, () => <Tile entry={entry} />)
+
+              return dispose
+            }, owner ?? undefined),
+        })),
+      onZoom: (id) => id && props.onOpen(id),
+    })
+
+    onCleanup(() => grid.dispose())
+  })
+
+  return (
+    <div ref={element} class="size-full [--k-ui-bento-bg:var(--v2-background-bg-deep)] [--k-ui-bento-radius:8px]" />
+  )
+}
+
+// A story's first state at its natural size on a labelled card, holding its own dialogs as the stage does.
+function Tile(props: { entry: LabEntry }) {
+  const [canvas, setCanvas] = createSignal<HTMLDivElement>()
+  const component = props.entry.component
+  const render = props.entry.states[0]?.render ?? props.entry.render
+
+  return (
+    <div
+      ref={setCanvas}
+      class="pointer-events-none relative flex size-full items-center justify-center overflow-hidden rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base p-4 pt-8 [contain:layout]"
+    >
+      <div class="absolute top-2.5 left-3 text-[11px] leading-4 text-v2-text-text-faint">
+        {props.entry.title.split("/").at(-1)}
+      </div>
+      <DialogProvider container={canvas()}>
+        <ErrorBoundary
+          fallback={(error) => <pre class="font-mono text-[11px] text-v2-state-fg-danger">{String(error)}</pre>}
+        >
+          {render
+            ? untrack(() => render(stateArgs(props.entry, 0)))
+            : component && <Dynamic component={component} {...stateArgs(props.entry, 0)} />}
+        </ErrorBoundary>
+      </DialogProvider>
+    </div>
+  )
+}
+
 function hasControls(entry: LabEntry) {
   return entry.states.length > 1 || Object.keys(labFields(entry)).length > 0
 }
