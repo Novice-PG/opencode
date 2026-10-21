@@ -1,3 +1,4 @@
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { useSearchParams } from "@solidjs/router"
 import {
   batch,
@@ -18,7 +19,7 @@ import { Dynamic, insert } from "solid-js/web"
 import { DialogProvider } from "@opencode/ui/context/dialog"
 import { useTheme } from "@opencode/ui/theme"
 import { motionGlobals } from "@opencode/ui/motion-tuning"
-import { choice, defineControls, toolbar, type Field } from "knobs"
+import { choice, defineControls, matchesCombo, toolbar, type Field } from "knobs"
 import { commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
 import { Tree } from "knobs/ui/solid"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -123,11 +124,25 @@ export default function ComponentsLab() {
         id: entry.file,
         label: entry.title.split("/").join(" / "),
         hint: fileName(entry.file),
+        keywords: entry.states.map((state) => state.name),
         run: () => setParams({ story: entry.file }),
       })),
     })
     palette.open()
   }
+
+  // Ahead of the app's own palette, which listens on the document.
+  makeEventListener(
+    window,
+    "keydown",
+    (event) => {
+      if (!matchesCombo("Mod+K", event)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      search()
+    },
+    { capture: true },
+  )
 
   createEffect(() => theme.previewColorScheme(scheme()))
   onCleanup(() => {
@@ -194,7 +209,7 @@ export default function ComponentsLab() {
           title: language.t("lab.components"),
           element: stories,
           actions: [
-            { label: language.t("lab.search"), icon: searchIcon, run: search },
+            { label: language.t("lab.search"), icon: searchIcon, shortcut: "Mod+K", run: search },
             {
               label: language.t("lab.theme"),
               icon: themeIcon,
@@ -415,14 +430,19 @@ function folder(entries: LabEntry[], path: string[]): Row[] {
       label: name,
       children: folder(inside, [...path, name]),
     })),
-    ...inside
-      .filter((entry) => entry.title.split("/").length === depth + 1)
-      .map((entry) => ({
-        id: entry.file,
-        label: entry.title.split("/").at(-1) ?? entry.title,
-        // Files may share a title, as Storybook merges them; the file name tells them apart.
-        detail: inside.filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
-      })),
+    ...inside.flatMap((entry) =>
+      entry.title.split("/").length === depth + 1
+        ? [
+            {
+              id: entry.file,
+              label: entry.title.split("/").at(-1) ?? entry.title,
+              // Files may share a title, as Storybook merges them; the file name tells them apart.
+              detail:
+                inside.filter((other) => other.title === entry.title).length > 1 ? fileName(entry.file) : undefined,
+            },
+          ]
+        : [],
+    ),
   ].toSorted((a, b) => a.label.localeCompare(b.label))
 }
 
