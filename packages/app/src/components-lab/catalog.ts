@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type -- CSF args are props each story owns; the lab forwards them */
 import { Schema } from "effect"
-import { choice, knob, toggle, type Field } from "knobs"
+import { choice, knob, text, toggle, type Field } from "knobs"
 import type { Component, JSX } from "solid-js"
 
 // Storybook's CSF as the stories in this repository write it: a default meta and named stories with args.
@@ -109,6 +109,8 @@ export function labFields(entry: LabEntry) {
       if (first !== undefined) return [[key, choice(isText(value) ? value : first, [first, ...rest])]]
 
       if (control.type === "boolean" || isBoolean(value)) return [[key, toggle(value === true, { random: true })]]
+
+      if (control.type === "text" || isText(value)) return [[key, text(isText(value) ? value : "")]]
 
       if (control.type !== "number" && control.type !== "range" && !isNumber(value)) return []
 

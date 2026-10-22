@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { choice, knob, toggle } from "knobs"
+import { choice, knob, text, toggle } from "knobs"
 import { knobArgs, labEntry, labFields, stateArgs } from "./catalog"
 
 const source = `
@@ -33,7 +33,7 @@ describe("labEntry", () => {
 })
 
 describe("labFields", () => {
-  test("types each arg by its argType, else by its value, and skips text", () => {
+  test("types each arg by its argType, else by its value", () => {
     const entry = labEntry("docks.stories.tsx", module, source)
     const fields = labFields(entry)
 
@@ -41,7 +41,8 @@ describe("labFields", () => {
       size: choice("normal", ["small", "normal"]),
       queued: knob(0, { min: 0, max: 6, step: 1 }),
       question: toggle(false, { random: true }),
+      label: text("Send"),
     })
-    expect(knobArgs(fields, stateArgs(entry, 1))).toEqual({ size: "normal", queued: 3, question: false })
+    expect(knobArgs(fields, stateArgs(entry, 1))).toEqual({ size: "normal", queued: 3, question: false, label: "Send" })
   })
 })

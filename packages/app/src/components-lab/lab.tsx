@@ -22,7 +22,7 @@ import { DialogProvider } from "@opencode/ui/context/dialog"
 import { useTheme } from "@opencode/ui/theme"
 import { motionGlobals } from "@opencode/ui/motion-tuning"
 import { choice, defineControls, matchesCombo, toolbar, type Field } from "knobs"
-import { bento, commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
+import { canvas, commandPalette, restyle, split, toast, type CommandPalette } from "knobs/ui"
 import { Tree } from "knobs/ui/solid"
 import { useLanguage } from "@/runtime/i18n/language"
 import { CommentsProvider } from "@/composer/comments"
@@ -150,10 +150,18 @@ export default function ComponentsLab() {
     { capture: true },
   )
 
+  // A story's modal overlay (a menu or dialog open by default) sets `pointer-events: none` on the body, which would
+  // freeze the lab around it. The lab stays usable while it's open.
+  const unblock = document.createElement("style")
+
+  unblock.textContent = "body { pointer-events: auto !important; }"
+  document.head.append(unblock)
+
   createEffect(() => theme.previewColorScheme(scheme()))
   onCleanup(() => {
     theme.cancelPreview()
     palette?.dispose()
+    unblock.remove()
   })
 
   createEffect(() => {
@@ -470,46 +478,61 @@ function folder(entries: LabEntry[], path: string[]): Row[] {
 }
 
 // knobs' split takes each pane's content as a node; Solid keeps it reactive where it sits.
-/** The library's stories side by side as a bento, each in its first state; picking one opens it on its own. */
+/** The library's stories on a canvas that pans and zooms, each in its first state; clicking one opens it on its own. */
 function Grid(props: { entries: LabEntry[]; scheme: "dark" | "light"; onOpen: (file: string) => void }) {
   const language = useLanguage()
   const owner = getOwner()
   let element!: HTMLDivElement
 
   onMount(() => {
-    const grid = bento(element, {
+    const board = canvas(element, {
       theme: props.scheme,
       label: language.t("lab.grid"),
-      gap: 12,
-      rowHeight: 220,
-      // Grouped by the library's own folders: actions, forms, overlays and so on.
+      // Neighbours share the library's folder: actions, forms, overlays and so on.
       items: props.entries
-        .map((entry) => ({ entry, group: entry.file.match(/ui\/src\/([^/]+)\//)?.[1] ?? "" }))
-        .toSorted((a, b) => a.group.localeCompare(b.group))
-        .map(({ entry, group }) => ({
+        .toSorted((a, b) => folderOf(a).localeCompare(folderOf(b)))
+        .map((entry) => ({
           id: entry.file,
-          label: entry.title.split("/").at(-1),
-          group,
-          aspect: 4 / 3,
-          render: (tile: HTMLElement) =>
+          title: entry.title.split("/").at(-1),
+          w: 320,
+          h: 240,
+          render: (card: HTMLElement) =>
             createRoot((dispose) => {
-              insert(tile, () => <Tile entry={entry} />)
+              insert(card, () => <Tile entry={entry} />)
 
               return dispose
             }, owner ?? undefined),
         })),
-      onZoom: (id) => id && props.onOpen(id),
     })
 
-    onCleanup(() => grid.dispose())
+    // The canvas captures the pointer to pan, so a card never sees its click: a press that ends where it began opens
+    // the story it began on.
+    let press: { file: string; x: number; y: number } | undefined
+
+    const down = (event: PointerEvent) => {
+      const file = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-lab-story]") : null
+
+      press = file?.dataset.labStory ? { file: file.dataset.labStory, x: event.clientX, y: event.clientY } : undefined
+    }
+
+    const up = (event: PointerEvent) => {
+      if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 4) props.onOpen(press.file)
+      press = undefined
+    }
+
+    element.addEventListener("pointerdown", down, true)
+    window.addEventListener("pointerup", up, true)
+    onCleanup(() => {
+      element.removeEventListener("pointerdown", down, true)
+      window.removeEventListener("pointerup", up, true)
+      board.dispose()
+    })
   })
 
-  return (
-    <div ref={element} class="size-full [--k-ui-bento-bg:var(--v2-background-bg-deep)] [--k-ui-bento-radius:8px]" />
-  )
+  return <div ref={element} class="size-full" />
 }
 
-// A story's first state at its natural size on a labelled card, holding its own dialogs as the stage does.
+// A story's first state at its natural size, holding its own dialogs as the stage does.
 function Tile(props: { entry: LabEntry }) {
   const [canvas, setCanvas] = createSignal<HTMLDivElement>()
   const component = props.entry.component
@@ -518,22 +541,31 @@ function Tile(props: { entry: LabEntry }) {
   return (
     <div
       ref={setCanvas}
-      class="pointer-events-none relative flex size-full items-center justify-center overflow-hidden rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base p-4 pt-8 [contain:layout]"
+      data-lab-story={props.entry.file}
+      class="relative flex size-full cursor-pointer items-center justify-center overflow-hidden bg-v2-background-bg-base p-4 [contain:layout]"
     >
-      <div class="absolute top-2.5 left-3 text-[11px] leading-4 text-v2-text-text-faint">
-        {props.entry.title.split("/").at(-1)}
-      </div>
-      <DialogProvider container={canvas()}>
-        <ErrorBoundary
-          fallback={(error) => <pre class="font-mono text-[11px] text-v2-state-fg-danger">{String(error)}</pre>}
-        >
-          {render
-            ? untrack(() => render(stateArgs(props.entry, 0)))
-            : component && <Dynamic component={component} {...stateArgs(props.entry, 0)} />}
-        </ErrorBoundary>
-      </DialogProvider>
+      {/* The provider waits for the card, so a story that opens a dialog at once opens it inside. */}
+      <Show when={canvas()}>
+        {(container) => (
+          <div class="pointer-events-none contents">
+            <DialogProvider container={container()}>
+              <ErrorBoundary
+                fallback={(error) => <pre class="font-mono text-[11px] text-v2-state-fg-danger">{String(error)}</pre>}
+              >
+                {render
+                  ? untrack(() => render(stateArgs(props.entry, 0)))
+                  : component && <Dynamic component={component} {...stateArgs(props.entry, 0)} />}
+              </ErrorBoundary>
+            </DialogProvider>
+          </div>
+        )}
+      </Show>
     </div>
   )
+}
+
+function folderOf(entry: LabEntry) {
+  return entry.file.match(/ui\/src\/([^/]+)\//)?.[1] ?? ""
 }
 
 function pane(content: () => JSX.Element) {
