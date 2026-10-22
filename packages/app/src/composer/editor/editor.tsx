@@ -19,7 +19,7 @@ import { FileIcon } from "@opencode/ui/file-icon"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Spinner } from "@opencode/ui/spinner"
-import { createAnimatedPresence } from "@/runtime/animated-presence"
+import { motionTuning } from "@opencode/ui/motion-tuning"
 import { ProviderModelIcon } from "@/providers/models/provider-group"
 import { useI18n } from "@opencode/ui/context/i18n"
 import { Button } from "@opencode/ui/button"
@@ -1406,24 +1406,17 @@ function ComposerEditorAlternateDelivery(props: { controller: ComposerEditorMode
     return queue.alternate()
   })
 
-  const [button, setButton] = createSignal<HTMLButtonElement>()
-  const presence = createAnimatedPresence(action, () => button() ?? null)
-
+  // Appears and leaves on the same frame as the placeholder, so typing never shows a fade.
   return (
-    <Show when={presence.present() && presence.value()} keyed>
+    <Show when={action()} keyed>
       {(delivery) => (
         <Tooltip placement="top" inactive={delivery !== "steer"} value={i18n.t("ui.promptInput.steerHint")}>
           <Button
-            ref={setButton}
             data-action="composer-alternate-delivery"
             type="button"
             variant="ghost-faint"
             size="small"
-            class="me-3 gap-1.5 px-1.5 ![font-weight:530] duration-150 motion-reduce:animate-none"
-            classList={{
-              "animate-in fade-in": presence.animate() && presence.show(),
-              "animate-out fade-out fill-mode-forwards": presence.animate() && !presence.show(),
-            }}
+            class="me-3 gap-1.5 px-1.5 ![font-weight:530]"
             onClick={() => props.controller.submit({ alternate: true })}
           >
             {delivery === "steer" ? i18n.t("ui.promptInput.steer") : i18n.t("ui.promptInput.queue")}
@@ -1435,6 +1428,51 @@ function ComposerEditorAlternateDelivery(props: { controller: ComposerEditorMode
       )}
     </Show>
   )
+}
+
+const sendIcon = motionTuning.choice("composer.sendIcon", {
+  label: "Send icon",
+  group: "Experiments",
+  value: "today",
+  labels: { today: "Today", ios: "iOS", heavy: "Heavier", filled: "Filled" },
+})
+
+const stopIcon = motionTuning.choice("composer.stopIcon", {
+  label: "Stop icon",
+  group: "Experiments",
+  value: "today",
+  labels: { today: "Today", rounded: "Rounded", ios: "iOS", heavy: "Heavier" },
+})
+
+const roundedStopSize = motionTuning.number("composer.stopIcon.size", {
+  label: "Rounded stop size",
+  group: "Experiments",
+  value: 10,
+  min: 6,
+  max: 14,
+  step: 1,
+  unit: "px",
+})
+
+const [icons, setIcons] = createStore({ send: sendIcon(), stop: stopIcon(), size: roundedStopSize() })
+
+motionTuning.subscribe(() => setIcons({ send: sendIcon(), stop: stopIcon(), size: roundedStopSize() }))
+
+// Drawn on a 16px grid so straight edges land on whole pixels at 1×.
+const sendGlyphs = {
+  today: undefined,
+  ios: `<path d="M8 13.5V3.5M3.75 7.75 8 3.5l4.25 4.25" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  heavy: `<path d="M8 14V4M3.5 8.5 8 4l4.5 4.5" stroke="currentColor" stroke-width="2"/>`,
+  filled: `<path d="M8 2l5.5 6H9v6H7V8H2.5z" fill="currentColor"/>`,
+}
+
+function stopGlyph() {
+  if (icons.stop === "today") return undefined
+
+  const [size, radius] = { rounded: [icons.size, icons.size / 4], ios: [8, 2], heavy: [10, 1] }[icons.stop]
+  const start = 8 - size / 2
+
+  return `<rect x="${start}" y="${start}" width="${size}" height="${size}" rx="${radius}" fill="currentColor"/>`
 }
 
 export function ComposerEditorSubmitButton(props: {
@@ -1462,7 +1500,23 @@ export function ComposerEditorSubmitButton(props: {
           props.held && !props.stopping ? (
             <Spinner class="size-4" />
           ) : (
-            <Icon name={props.stopping ? "stop" : props.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />
+            <Show
+              when={props.stopping ? stopGlyph() : props.mode !== "shell" && sendGlyphs[icons.send]}
+              fallback={
+                <Icon name={props.stopping ? "stop" : props.mode === "shell" ? "arrow-undo-down" : "arrow-up"} />
+              }
+            >
+              {(glyph) => (
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
+                  innerHTML={glyph()}
+                />
+              )}
+            </Show>
           )
         }
         aria-busy={props.held && !props.stopping}

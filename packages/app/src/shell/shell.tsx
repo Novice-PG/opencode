@@ -1,7 +1,8 @@
-import { Show, Suspense, type ParentProps } from "solid-js"
+import { Show, startTransition, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode/ui/resize-handle"
+import { useDialog } from "@opencode/ui/context/dialog"
 import { Titlebar } from "@/shell/titlebar/titlebar"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ToastRegion } from "@/shell/notifications/toast"
@@ -13,9 +14,14 @@ import { ExtensionServerCover } from "@/runtime/extension/server-shell"
 import { ExtensionSlot } from "@/runtime/extension/render"
 import { useCommand } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
-import { CollapsedSidebarToggle, paintCollapsedSlots } from "@/shell/sidebar-toggle"
+import { useGlobal } from "@/runtime/server/runtime"
+import { useServers } from "@/runtime/server/registry"
+import { useTabs } from "@/shell/tabs/tabs"
+import { CollapsedSidebarToggle, measureSidebarToggles, paintCollapsedSlots } from "@/shell/sidebar-toggle"
 import { createPanelMotion, guardClosingFocus, replayPanelToggle } from "@/shell/panel-motion"
 import { windowDragEnabled } from "@/session/header/drag-area"
+
+export const sidebarToggleCommand = { id: "sidebar.toggle", keybind: "mod+shift+b" }
 
 export default function Layout(props: ParentProps) {
   const platform = usePlatform()
@@ -23,16 +29,22 @@ export default function Layout(props: ParentProps) {
   const preferences = useSettings()
   const command = useCommand()
   const language = useLanguage()
+  const dialog = useDialog()
+  const global = useGlobal()
+  const servers = useServers()
+  const tabs = useTabs()
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const [state, setState] = createStore<{
     tabsWidth: number
     tabsMount: HTMLElement | undefined
     tabsAside: HTMLElement | undefined
+    tabsPanel: HTMLElement | undefined
   }>({
     tabsWidth: 260,
     tabsMount: undefined,
     tabsAside: undefined,
+    tabsPanel: undefined,
   })
 
   const verticalTabs = () => preferences.appearance.tabLayout() !== "horizontal" && !mobile()
@@ -46,8 +58,19 @@ export default function Layout(props: ParentProps) {
       const aside = state.tabsAside
 
       if (aside) aside.style.width = `${state.tabsWidth * (1 - closed)}px`
+
+      // Dims the contents, background included, as they leave and fade them in as they arrive.
+      if (state.tabsMount) state.tabsMount.style.opacity = closed === 0 ? "" : `${1 - closed}`
       paintCollapsedSlots(closed)
     },
+    measure: () => measureSidebarToggles(state.tabsWidth),
+    element: () => state.tabsPanel,
+    offset: () => -10,
+    neighbours: () => [
+      [document.querySelector<HTMLElement>('[data-slot="session-chat-panel"]'), "center"],
+      [document.querySelector<HTMLElement>('[data-slot="session-side-panel-presence"]'), "start"],
+    ],
+    resize: () => state.tabsAside,
   })
 
   replayPanelToggle({ id: "sidebar", label: "Toggle the left sidebar", toggle: toggleSidebar })
@@ -66,15 +89,42 @@ export default function Layout(props: ParentProps) {
     verticalTabs()
       ? [
           {
-            id: "sidebar.toggle",
+            ...sidebarToggleCommand,
             title: language.t("command.sidebar.toggle"),
             category: language.t("command.category.view"),
-            keybind: "mod+shift+b",
             onSelect: toggleSidebar,
           },
         ]
       : [],
   )
+  // Every surface has a palette: routes with their own register under the same key, and the newest wins.
+  command.register("palette", () => [
+    {
+      id: "command.palette",
+      title: language.t("command.palette"),
+      hidden: true,
+      onSelect: async () => {
+        const conn = servers.visible.find((item) => servers.current(item)) ?? servers.visible[0]
+
+        if (!conn) return
+        const { HomeCommandPalette } = await import("@/home/start/command-palette")
+        void dialog.show(() => (
+          <HomeCommandPalette
+            server={conn}
+            onSelectSession={(entry) => {
+              if (!entry.sessionID || !entry.directory || !entry.server) return
+              const sessionID = entry.sessionID
+              const server = entry.server
+              global.ensureServerCtx(conn).projects.touch(entry.project?.worktree ?? entry.directory)
+              void startTransition(() => {
+                tabs.select(tabs.addSessionTab({ server, sessionId: sessionID }))
+              })
+            }}
+          />
+        ))
+      },
+    },
+  ])
   const bottomTitlebar = () => mobile() && preferences.general.mobileTitlebarPosition() === "bottom"
   const dragInset = () => windowDragEnabled(platform) && !mobile()
 
@@ -119,12 +169,13 @@ export default function Layout(props: ParentProps) {
               {/* Skipped rather than display: none or inert, so neither direction restyles the sidebar's contents and
                   a reopen reuses their layout. */}
               <div
+                ref={(element) => setState("tabsPanel", element)}
                 class="absolute inset-0 overflow-hidden [contain:layout_style_paint]"
                 classList={{ "[content-visibility:hidden]": !sidebarMotion.present() }}
               >
                 <div
                   ref={(element) => setState("tabsMount", element)}
-                  class="absolute inset-y-0 end-0 contain-strict flex min-h-0 flex-col bg-v2-background-bg-deep pe-0.5 ps-2.5 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]"
+                  class="absolute inset-y-0 end-0 contain-strict will-change-[opacity] flex min-h-0 flex-col bg-v2-background-bg-deep pe-0.5 ps-2.5 pb-[var(--shell-bottom-inset,8px)] pt-[var(--shell-top-inset,8px)]"
                   style={{
                     width: `${state.tabsWidth}px`,
                     "padding-bottom": "max(10px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
@@ -165,8 +216,8 @@ export default function Layout(props: ParentProps) {
             <ExtensionServerCover>
               <Suspense>{props.children}</Suspense>
             </ExtensionServerCover>
-            <CollapsedSidebarToggle />
           </main>
+          <CollapsedSidebarToggle />
         </div>
         <ExtensionSlot at="window.bottom" input={{}} />
         <ToastRegion />

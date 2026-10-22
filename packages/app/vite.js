@@ -25,7 +25,7 @@ if (tailwindGenerate && typeof tailwindHotUpdate === "function") {
 
 // The markdown worker imports these directly, so they are served unbundled to keep worker startup
 // stable.
-const workerDeps = ["@shikijs/stream", "marked", "marked-shiki"]
+const workerDeps = ["@pierre/highlights", "marked"]
 
 // The Office previews load their wasm and fonts through `new URL(..., import.meta.url)`, which a pre-bundle would move
 // away from the files.

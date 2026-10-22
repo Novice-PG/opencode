@@ -363,13 +363,10 @@ test("context closes the side region only when its button opened it", async ({ p
     .click()
   await expect(context).toHaveAttribute("aria-selected", "true")
   await expect(newTab).toHaveCount(0)
-  // The New tab view now lists the closed Review under "Recently closed" too; reopening it brings back the same tab.
+  // "Recently closed" lists only files, so the closed Review is offered again by its launcher alone.
   await panel.getByRole("button", { name: "Add tab", exact: true }).click()
-  await expect(panel.getByRole("region", { name: "Recently closed", exact: true })).toContainText("Review")
-  await panel
-    .getByRole("region", { name: "Recently closed", exact: true })
-    .getByRole("button", { name: /^Review/ })
-    .click()
+  await expect(panel.getByRole("region", { name: "Recently closed", exact: true })).toHaveCount(0)
+  await panel.getByRole("button", { name: /^Review/ }).click()
   await expect(panel.locator("#session-side-panel-review-tab")).toHaveAttribute("aria-selected", "true")
   await context.click()
   await contextButton.click()
@@ -858,7 +855,7 @@ test("image files load into the review panel and keep it painted while loading",
   ).toEqual([])
 })
 
-test("video files stream into the viewer behind a loading state, expand into the theatre overlay, and collapse on Escape without remounting", async ({
+test("video files stream into the viewer behind a loading state, open into the preview, and come back on Escape without remounting", async ({
   page,
 }) => {
   const directory = "C:/OpenCode/ReviewVideo"
@@ -915,7 +912,7 @@ test("video files stream into the viewer behind a loading state, expand into the
   const stage = panel.locator('[data-slot="artifact-stage"]')
   const video = stage.locator('video[data-slot="artifact-media"]')
   const fullscreen = stage.getByRole("button", { name: "Enter full screen", exact: true })
-  const exitFullscreen = stage.getByRole("button", { name: "Exit full screen", exact: true })
+  const preview = page.locator('[data-component="image-preview"]')
   const loading = stage.getByRole("status", { name: "Loading", exact: true })
 
   await ranged.promise
@@ -928,7 +925,6 @@ test("video files stream into the viewer behind a loading state, expand into the
   await expect(toolbar).toContainText("0:01")
   await expect(toolbar).toContainText("38.4 MB")
   await expect(panel.getByText(/Binary file/)).toHaveCount(0)
-  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
   const inlineBounds = (await stage.boundingBox())!
   expect(inlineBounds.width).toBeLessThan(1000)
 
@@ -936,26 +932,23 @@ test("video files stream into the viewer behind a loading state, expand into the
     element.dataset.e2eProbe = "retained"
   })
 
+  // The preview borrows the same element, so playback never restarts.
   await fullscreen.click()
-  await expect(exitFullscreen).toHaveAttribute("aria-pressed", "true")
-  await expect(stage).toHaveAttribute("data-expanded", "")
-  expect(await stage.evaluate((element) => element.matches(":popover-open"))).toBe(true)
+  await expect(preview).toHaveAttribute("data-stage", "rest")
+  await expect(preview.locator('video[data-e2e-probe="retained"]')).toBeVisible()
+  await expect(video).toHaveCount(0)
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
-  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
-  await expect.poll(() => stage.boundingBox()).toEqual({ x: 0, y: 0, width: 1440, height: 900 })
 
   await page.keyboard.press("Escape")
-  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
-  await expect(stage).not.toHaveAttribute("data-expanded")
-  expect(await stage.evaluate((element) => element.matches(":popover-open"))).toBe(false)
-  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
+  await expect(preview).toHaveCount(0)
+  await expect(video).toHaveAttribute("data-e2e-probe", "retained")
   await expect.poll(() => stage.boundingBox()).toEqual(inlineBounds)
 
   await video.dblclick()
-  await expect(exitFullscreen).toHaveAttribute("aria-pressed", "true")
+  await expect(preview).toHaveAttribute("data-stage", "rest")
   await page.mouse.click(8, 8)
-  await expect(fullscreen).toHaveAttribute("aria-pressed", "false")
-  expect(await video.evaluate((element) => element.dataset.e2eProbe)).toBe("retained")
+  await expect(preview).toHaveCount(0)
+  await expect(video).toHaveAttribute("data-e2e-probe", "retained")
 
   // Chromium's controls also answer a double click with native fullscreen, which covers the backdrop. Opting out with
   // controlslist="nofullscreen" would end their click-to-play as well.
@@ -1268,10 +1261,9 @@ test("names a single change source and keeps the review header rows at 48px", as
   await expect(region).toHaveAttribute("aria-expanded", "false")
   await region.click()
   await expect(panel.getByRole("tab")).toHaveCount(0)
-  // Its launchers, then the closed Review under "Recently closed".
-  const closed = panel.getByRole("region", { name: "Recently closed", exact: true })
-  await expect(panel.getByRole("button", { name: /^Review/ }).first()).toBeVisible()
-  await expect(closed.getByRole("button", { name: /^Review/ })).toBeVisible()
+  // Only its launchers: "Recently closed" lists files, not the closed Review.
+  await expect(panel.getByRole("button", { name: /^Review/ })).toBeVisible()
+  await expect(panel.getByRole("region", { name: "Recently closed", exact: true })).toHaveCount(0)
 })
 
 for (const direction of ["ltr", "rtl"] as const) {

@@ -327,7 +327,7 @@ function CompactSessionStory() {
               message: 'Error: {"error":{"type":"ProviderError","message":"The provider rejected the summary."}}',
             },
           }
-        : { summary: state.summary, recent: "" }),
+        : { summary: state.summary }),
       time: { created: STORY_TIME + 10 },
     }
 

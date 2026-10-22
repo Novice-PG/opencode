@@ -43,14 +43,14 @@ test("the content beside a panel follows the panel's edge on every frame of a to
   // Half speed, so even a slow runner draws several frames of each flight.
   await seed(page, {
     settings: { appearance: { tabLayout: "vertical", sidebarOpen: true } },
-    storage: { "opencode.motion.v2": { speed: 0.5 } },
+    storage: { "opencode.motion.v2": { speed: 0.5, "sidebars.james": 0 } },
   })
   await page.goto(sessionHref(fixture.targetID))
   await expect(page.getByRole("heading", { name: fixture.expected.targetTitle })).toBeVisible()
 
   const sidebar = page
     .locator(
-      '[data-slot="vertical-tabs-sidebar"] button[aria-controls="vertical-tabs-sidebar"], main button[aria-controls="vertical-tabs-sidebar"]',
+      '[data-slot="vertical-tabs-sidebar"] button[aria-controls="vertical-tabs-sidebar"], [data-slot="collapsed-sidebar-toggle"] button[aria-controls="vertical-tabs-sidebar"]',
     )
     .locator("visible=true")
     .first()

@@ -1,7 +1,10 @@
 export * as LocationActivity from "./location-activity.js"
 
-import { Clock, Context, Duration, Effect, Layer, RcMap, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, RcMap, Schema } from "effect"
+import type { Document } from "@opencode/schema/config"
 import { Bus } from "./bus.js"
+import { Config } from "./config.js"
+import { Job } from "./job.js"
 import { Location } from "./location.js"
 import { LocationServiceMap } from "./location-service-map.js"
 import { SessionEvent } from "./session/event.js"
@@ -13,13 +16,7 @@ const isSessionEvent = Schema.is(SessionEvent.Durable)
 
 export class Service extends Context.Service<Service, {}>()("@opencode/LocationActivity") {}
 
-export function layer(
-  options: {
-    readonly timeToLive?: Duration.Input
-    readonly maxActiveHold?: Duration.Input
-    readonly sweepInterval?: Duration.Input
-  } = {},
-) {
+export function layer(options: { readonly timeToLive?: Duration.Input; readonly sweepInterval?: Duration.Input } = {}) {
   return Layer.effect(
     Service,
     Effect.gen(function* () {
@@ -27,17 +24,31 @@ export function layer(
       const bus = yield* Bus.Service
       const locations = yield* LocationServiceMap.Service
       const execution = yield* SessionExecution.Service
+      const jobs = yield* Job.Service
       const sessions = yield* SessionStore.Service
-      const timeToLive = Duration.toMillis(options.timeToLive ?? "60 minutes")
-      const maxActiveHold = Duration.toMillis(options.maxActiveHold ?? "24 hours")
-      // `activeAt` is the last durable session event; `expiresAt` also moves with keep-alive.
-      const entries = new Map<string, { readonly ref: Location.Ref; expiresAt: number; readonly activeAt: number }>()
+      const timeToLive = Duration.fromInputUnsafe(options.timeToLive ?? "60 minutes")
+      const entries = new Map<string, { readonly ref: Location.Ref; touchedAt: number }>()
       const key = (ref: Location.Ref) => `${LocationServiceMap.canonical(ref).directory}\0${ref.workspaceID ?? ""}`
       const touch = (ref: Location.Ref) =>
         Effect.sync(() => {
-          const now = clock.currentTimeMillisUnsafe()
-          entries.set(key(ref), { ref, expiresAt: now + timeToLive, activeAt: now })
+          entries.set(key(ref), { ref, touchedAt: clock.currentTimeMillisUnsafe() })
         })
+
+      // Read per location so project config can override the global value.
+      const idleTimeout = (ref: Location.Ref) =>
+        Effect.gen(function* () {
+          const context = yield* locations.contextEffectOption(ref)
+          if (Option.isNone(context)) return timeToLive
+          const entries = yield* Context.get(context.value, Config.Service).entries()
+          const configured = entries.findLast(
+            (entry): entry is Document =>
+              entry.type === "document" && entry.info.experimental?.location_idle_timeout !== undefined,
+          )
+          return configured?.info.experimental?.location_idle_timeout ?? timeToLive
+        }).pipe(
+          Effect.scoped,
+          Effect.orElseSucceed(() => timeToLive),
+        )
 
       const unsubscribe = yield* bus.listen((event) => {
         if (!isSessionEvent(event) || !event.location) return Effect.void
@@ -55,46 +66,36 @@ export function layer(
         for (const id of entries.keys()) {
           if (!cached.has(id)) entries.delete(id)
         }
-        // A long tool call or a pending question emits no durable events, so count active
-        // execution as activity, but only up to `maxActiveHold` of silence so nothing lives forever.
-        const active = yield* Effect.forEach(yield* execution.active, (sessionID) => sessions.get(sessionID))
         const now = clock.currentTimeMillisUnsafe()
-        for (const session of active) {
-          const entry = session && entries.get(key(session.location))
-          if (entry)
-            entry.expiresAt = Math.max(entry.expiresAt, Math.min(now + timeToLive, entry.activeAt + maxActiveHold))
-        }
-        const expired = Array.from(entries.values()).filter((entry) => entry.expiresAt <= now)
+        const expired = yield* Effect.filter(Array.from(entries.values()), (entry) =>
+          idleTimeout(entry.ref).pipe(
+            Effect.map((timeout) => timeout !== false && entry.touchedAt + Duration.toMillis(timeout) <= now),
+          ),
+        )
+        if (expired.length === 0) return
+        // Waiting on a question, a long tool call, or a background job emits no durable activity.
+        const owners = [
+          ...(yield* execution.active),
+          ...(yield* jobs.runningBackground).flatMap((recovery) =>
+            recovery.kind === "shell" ? [recovery.sessionID] : [recovery.childSessionID, recovery.parentSessionID],
+          ),
+        ]
+        const occupied = new Set(
+          (yield* Effect.forEach(owners, (sessionID) => sessions.get(sessionID))).flatMap((session) =>
+            session ? [key(session.location)] : [],
+          ),
+        )
         yield* Effect.forEach(
           expired,
-          (entry) =>
-            Effect.gen(function* () {
-              const owners = active.flatMap((session) =>
-                session && key(session.location) === key(entry.ref) ? [session] : [],
-              )
-              // Invalidation only detaches the cache entry; borrowers retain the old
-              // graph. Stop its executions and settle tool cleanup before detaching it.
-              yield* Effect.forEach(
-                owners,
-                (session) => execution.interrupt(session.id, { reason: "inactivity", awaitSettlement: true }),
-                {
-                  discard: true,
-                  concurrency: "unbounded",
-                },
-              )
-              const remaining = yield* Effect.forEach(yield* execution.active, (sessionID) => sessions.get(sessionID))
-              // New work admitted during cleanup may now own the cached graph.
-              if (remaining.some((session) => session && key(session.location) === key(entry.ref))) {
-                yield* touch(entry.ref)
-                return
-              }
-              entries.delete(key(entry.ref))
-              yield* Effect.logInfo("location services evicted", {
-                directory: entry.ref.directory,
-                workspaceID: entry.ref.workspaceID,
-              }).pipe(Effect.andThen(locations.invalidate(entry.ref)))
-            }),
-          { discard: true, concurrency: "unbounded" },
+          (entry) => {
+            if (occupied.has(key(entry.ref))) return touch(entry.ref)
+            entries.delete(key(entry.ref))
+            return Effect.logInfo("location services evicted", {
+              directory: entry.ref.directory,
+              workspaceID: entry.ref.workspaceID,
+            }).pipe(Effect.andThen(locations.invalidate(entry.ref)))
+          },
+          { discard: true },
         )
       }).pipe(Effect.forever, Effect.forkScoped)
 
@@ -106,5 +107,5 @@ export function layer(
 export const node = makeGlobalNode({
   service: Service,
   layer: layer(),
-  deps: [Bus.node, LocationServiceMap.node, SessionExecution.node, SessionStore.node],
+  deps: [Bus.node, Job.node, LocationServiceMap.node, SessionExecution.node, SessionStore.node],
 })
