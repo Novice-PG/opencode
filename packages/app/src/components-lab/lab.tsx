@@ -162,17 +162,8 @@ export default function ComponentsLab() {
     if (failed) toast(language.plural("lab.failed", failed))
   })
 
-  // The story's knobs panel mounts in `controls`; a story with no states or args says so instead.
-  const controls = document.createElement("div")
-
-  const inspector = pane(() => [
-    controls,
-    <Show when={selected() && !hasControls(selected()!)}>
-      <div class="px-3 py-6 text-center text-[13px] leading-4 text-v2-text-text-faint">
-        {language.t("lab.noControls")}
-      </div>
-    </Show>,
-  ])
+  // The story's knobs panel mounts in the inspector pane.
+  const inspector = pane(() => null)
 
   const stories = pane(() => (
     <Show when={catalog()}>
@@ -215,7 +206,7 @@ export default function ComponentsLab() {
           </div>
         }
       >
-        {(entry) => <Stage entry={entry} inspector={controls} scheme={untrack(scheme)} />}
+        {(entry) => <Stage entry={entry} inspector={inspector} scheme={untrack(scheme)} />}
       </Show>
     </Show>
   ))
@@ -282,7 +273,7 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
   const render = () => entry.states[index()]?.render ?? entry.render ?? fallback
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  // A state is a preset: its chip, `[` and `]`, the State row and Play all apply it, so the panel shows where it is.
+  // A state is a variant: its chip, `[` and `]` and Play all apply it, so the panel shows where it is.
   const preset = (next: number): void => store.preset(next === 0 ? "default" : (names[next] ?? "default"))
 
   const step = (by: number) => preset((index() + by + names.length) % names.length)
@@ -304,23 +295,26 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
     first === undefined || rest.length === 0
       ? {}
       : {
-          state: choice(first, [first, ...rest], { readOnly: true }),
-          play: toolbar([
-            {
-              id: "previous",
-              label: language.t("lab.previous"),
-              icon: "M200 48 80 128l120 80ZM48 48h16v160H48Z",
-              run: () => step(-1),
-            },
-            { id: "play", label: language.t("lab.play"), icon: "play", run: play },
-            { id: "pause", label: language.t("lab.pause"), icon: "pause", run: () => clearTimeout(timer) },
-            {
-              id: "next",
-              label: language.t("lab.next"),
-              icon: "M56 48l120 80-120 80ZM192 48h16v160h-16Z",
-              run: () => step(1),
-            },
-          ]),
+          state: choice(first, [first, ...rest], { variants: true }),
+          play: toolbar(
+            [
+              {
+                id: "previous",
+                label: language.t("lab.previous"),
+                icon: "M200 48 80 128l120 80ZM48 48h16v160H48Z",
+                run: () => step(-1),
+              },
+              { id: "play", label: language.t("lab.play"), icon: "play", run: play },
+              { id: "pause", label: language.t("lab.pause"), icon: "pause", run: () => clearTimeout(timer) },
+              {
+                id: "next",
+                label: language.t("lab.next"),
+                icon: "M56 48l120 80-120 80ZM192 48h16v160h-16Z",
+                run: () => step(1),
+              },
+            ],
+            { labels: false },
+          ),
         }
 
   const store = defineControls(
@@ -333,12 +327,7 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
       ship: () => import("knobs/panel"),
       defaultLabel: first,
       presets: Object.fromEntries(
-        entry.states
-          .slice(1)
-          .map((state, offset) => [
-            state.name,
-            { state: state.name, ...knobArgs(fields, stateArgs(entry, offset + 1)) },
-          ]),
+        entry.states.slice(1).map((state, offset) => [state.name, knobArgs(fields, stateArgs(entry, offset + 1))]),
       ),
       onChange: (patch, values, meta) => {
         if (!("state" in patch)) return setArgs(patch)
@@ -358,15 +347,15 @@ function Stage(props: { entry: LabEntry; inspector: HTMLElement; scheme: "dark" 
 
   onCleanup(() => clearTimeout(timer))
 
-  if (Object.keys(store.schema).length > 0)
-    onCleanup(
-      store.mount(props.inspector, {
-        theme: props.scheme,
-        header: { title: false, buttons: ["undo", "redo", "reset"] },
-        variants: false,
-        session: false,
-      }),
-    )
+  onCleanup(
+    store.mount(props.inspector, {
+      theme: props.scheme,
+      header: { title: false, buttons: ["undo", "redo", "reset"] },
+      variants: false,
+      session: false,
+      empty: language.t("lab.noControls"),
+    }),
+  )
 
   return (
     // Contained layout makes the canvas hold its stories' dialogs, which the provider below portals into it.
@@ -545,10 +534,6 @@ function Tile(props: { entry: LabEntry }) {
       </DialogProvider>
     </div>
   )
-}
-
-function hasControls(entry: LabEntry) {
-  return entry.states.length > 1 || Object.keys(labFields(entry)).length > 0
 }
 
 function pane(content: () => JSX.Element) {
