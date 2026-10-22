@@ -372,7 +372,6 @@ test("icon-only inactive tabs retain their avatar and attention badge instead of
   const tabB = page.locator(`[data-titlebar-tab-slot]:has(a[href="${sessionHref(b.id)}"])`)
   await expect(tabB.locator('[data-slot="tab-title"]')).toBeHidden()
   await expect(tabB.locator('[data-component="project-avatar-v2"]')).toBeVisible()
-  await expect(tabB.locator('[data-slot="project-avatar-generated"]')).toBeVisible()
   await expect(tabB.locator('[data-slot="tab-avatar-unread-dot"]')).toBeVisible()
   await expect(tabB.locator('[data-slot="tab-avatar-unread-dot"]')).toHaveCSS("width", "6px")
   await expect(tabB.locator('[data-slot="tab-avatar-unread-dot"]')).toHaveCSS("height", "6px")
@@ -491,7 +490,10 @@ for (const [screen, href] of [
 
     const sidebar = page.locator('[data-slot="vertical-tabs-sidebar"]')
     await expect(sidebar).toHaveAttribute("data-state", "closed")
-    await page.locator("main").getByRole("button", { name: "Toggle sidebar", exact: true }).click()
+    await page
+      .locator('[data-slot="collapsed-sidebar-toggle"]')
+      .getByRole("button", { name: "Toggle sidebar", exact: true })
+      .click()
     await expect(sidebar).toHaveAttribute("data-state", "open")
     await expect(sidebar.getByRole("button", { name: "Toggle sidebar", exact: true })).toHaveAttribute(
       "aria-expanded",

@@ -7,6 +7,7 @@ import {
   type SessionComposerRegionViewController,
 } from "@/session/composer/session-composer-region"
 import { SessionActivityChips, type SessionActivityItem } from "@/session/composer/activity-chips"
+import { SettingsProvider } from "@/settings/model"
 import { SubagentBar } from "@/session/composer/subagent-bar"
 import { SessionPanelFrame, SessionRouteFrame } from "@/session/session-frame"
 import type { FormInfo, PermissionRequest, SessionStatus } from "@opencode/client/promise"
@@ -294,8 +295,8 @@ function SessionSurfaceState(props: SessionPreviewProps & { onReset: () => void 
                         )}
                       </Show>
                     }
-                    composer={
-                      <div class="relative">
+                    above={
+                      <SettingsProvider>
                         <SessionActivityChips
                           subagents={props.activity?.subagents ?? []}
                           shells={props.activity?.shells ?? []}
@@ -310,11 +311,9 @@ function SessionSurfaceState(props: SessionPreviewProps & { onReset: () => void 
                               : setState("activity", `Stopped ${item.label ?? item.key}`)
                           }
                         />
-                        <div class="relative z-10">
-                          <Composer model={prompt.controller} borderUnderlay />
-                        </div>
-                      </div>
+                      </SettingsProvider>
                     }
+                    composer={<Composer model={prompt.controller} borderUnderlay />}
                   />
                 </section>
                 <Show when={state.reviewOpened}>

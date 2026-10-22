@@ -45,9 +45,9 @@ import { SessionIdentityHeader, SessionLocation } from "./session-identity-heade
 import { SessionHeaderDrag, windowDragEnabled } from "./header/drag-area"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useServer } from "@/runtime/server/current"
-import { SessionReviewToggle } from "./header/session-header-actions"
+import { reviewGlyphFill, SessionReviewToggle } from "./header/session-header-actions"
 import { createTimelineCache } from "./timeline/cache"
-import { createPanelMotion, replayPanelToggle } from "@/shell/panel-motion"
+import { createPanelMotion, jamesPanelShift, replayPanelToggle } from "@/shell/panel-motion"
 
 export function SessionScreenView(props: { session: SessionModel }) {
   // The timeline cache captures its owner when created, so link handling must be provided above it.
@@ -152,14 +152,26 @@ function SessionScreenContent(props: {
   // The chat keeps its open width as the far end of a close's travel.
   const chatOpenWidth = createMemo<string>((previous) => (sideVisible() ? screen.panel.width() : previous), "100%")
   let chat: HTMLDivElement | undefined
+  let sidePresence: HTMLDivElement | undefined
 
   // Once opened, the side region stays mounted and is skipped by content-visibility when a close settles, so neither
   // direction mounts its contents mid-flight, and a reopen reuses their style and layout.
+  let sideContent: HTMLDivElement | undefined
+  let sideGlyph: SVGPathElement | undefined
+  let sideClosed = 0
+  // The toggle's pane fills from the panel's edge as far as the panel is open.
+  const paintSideGlyph = () => sideGlyph?.setAttribute("transform", reviewGlyphFill(1 - sideClosed))
   const sideMotion = createPanelMotion({
     open: sideVisible,
     identity: session.layout.tabKey,
     // The chat's real width moves the side panel's edge, whose contents keep their open width pinned to it.
     paint: (closed) => {
+      sideClosed = closed
+      paintSideGlyph()
+
+      // Dims the contents as they leave and fades them in as they arrive.
+      if (sideContent) sideContent.style.opacity = closed === 0 ? "" : `${1 - closed}`
+
       if (!chat) return
       const open = chatOpenWidth()
 
@@ -171,6 +183,10 @@ function SessionScreenContent(props: {
 
       chat.style.width = closed === 0 ? open : `calc(${open} + (100% - ${open}) * ${closed})`
     },
+    element: () => sidePresence,
+    offset: jamesPanelShift,
+    neighbours: () => [[chat, "center"]],
+    resize: () => chat,
   })
 
   replayPanelToggle({
@@ -221,7 +237,10 @@ function SessionScreenContent(props: {
   })
 
   props.bindBackground(composer.requests.background.tasks)
-  useUsageExceededDialogs()
+  useUsageExceededDialogs({
+    selection: () => composer.active()?.composer.model.selection,
+    onDone: () => composer.active()?.composer.restoreFocus(),
+  })
 
   const quote = createTimelineQuote({
     root: timeline.scroller,
@@ -424,7 +443,13 @@ function SessionScreenContent(props: {
               onPointerDown={hideTimelineScrollbar}
               onClick={hideTimelineScrollbar}
             >
-              <SessionReviewToggle onToggle={region.toggle} />
+              <SessionReviewToggle
+                onToggle={region.toggle}
+                glyph={(fill) => {
+                  sideGlyph = fill
+                  paintSideGlyph()
+                }}
+              />
             </div>
           </Show>
           <div
@@ -465,6 +490,7 @@ function SessionScreenContent(props: {
 
           <Show when={sideMotion.present() || store.sideMounted}>
             <div
+              ref={sidePresence}
               data-slot="session-side-panel-presence"
               class="z-0 min-w-0 h-full overflow-visible"
               classList={{
@@ -474,8 +500,9 @@ function SessionScreenContent(props: {
               }}
             >
               <div
+                ref={sideContent}
                 data-slot="session-side-panel-content"
-                class="absolute inset-y-0 start-0 size-full [contain:layout_style]"
+                class="absolute inset-y-0 start-0 size-full [contain:layout_style] will-change-[opacity]"
                 style={{ "--session-side-content-width": screen.side.contentWidth() }}
               >
                 <div data-slot="session-side-region" class="absolute inset-0 min-h-0 overflow-visible">

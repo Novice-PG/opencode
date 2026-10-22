@@ -5,14 +5,9 @@ import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { createKeyed, useExtension } from "../sdk"
-import {
-  applyProviderMetricEvent,
-  isProviderMetricEvent,
-  projectedProviderMetrics,
-  type ProviderMetrics,
-  type ProviderMetricState,
-} from "./metrics"
 import { motionGlobals, motionTuning } from "@opencode/ui/motion-tuning"
+import { duration } from "@opencode/util/duration"
+import { SessionTurn } from "@opencode/util/session-turn"
 
 type Mem = Performance & {
   memory?: {
@@ -73,14 +68,6 @@ const mb = (n?: number) => {
   const v = n / 1024 / 1024
 
   return `${v >= 1024 ? v.toFixed(0) : v.toFixed(1)}MB`
-}
-
-const duration = (n?: number) => {
-  if (n === undefined || Number.isNaN(n)) return
-
-  if (n < 1_000) return `${Math.round(n)}ms`
-
-  return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0)}s`
 }
 
 const bad = (n: number | undefined, limit: number, low = false) => {
@@ -241,43 +228,37 @@ export default function DebugBar(props: {
     { equals: (a, b) => a?.data === b?.data && a?.id === b?.id },
   )
 
-  // History comes from the already-loaded message projection; live requests refine it in place.
-  const projected = createMemo(() => {
+  // The numbers on the TUI's latest assistant footer, which follows a step that ended the turn, failed, or is retrying.
+  const turn = createMemo(() => {
     const current = target()
 
     if (!current) return
 
-    return projectedProviderMetrics(current.data.session.message.list(current.id))
+    const messages = current.data.session.message.list(current.id)
+
+    const index = messages.findLastIndex(
+      (item) =>
+        item.type === "assistant" &&
+        Boolean(item.retry || item.error || (item.finish && !["tool-calls", "unknown"].includes(item.finish))),
+    )
+
+    if (index === -1) return
+
+    const options = { index, legacy: SessionTurn.legacy(messages) }
+    // The TUI hides a zero duration, which means the step has not completed.
+    const elapsed = SessionTurn.duration(messages, messages[index], options)
+
+    return {
+      duration: elapsed ? duration(elapsed) : undefined,
+      tps: SessionTurn.tokensPerSecond(messages, messages[index], options),
+    }
   })
 
-  // Missed events during an outage are never replayed, so live metrics hold only for the target and the outage count
-  // they were measured under: after a disconnect the refreshed projection wins until the next live request.
-  const outages = createMemo((count: number = 0) => (target()?.server.connected ? count : count + 1))
   // The Motion workspace's global speed, kept in view while tuning.
   const [globals, setGlobals] = createSignal({ speed: motionGlobals.speed.value, slow: motionGlobals.slow.value })
   onCleanup(
     motionTuning.subscribe(() => setGlobals({ speed: motionGlobals.speed.value, slow: motionGlobals.slow.value })),
   )
-  const [live, setLive] = createSignal<{ target: object; outages: number; metrics: ProviderMetrics }>()
-
-  const metrics = () => {
-    const current = live()
-
-    return current && current.target === target() && current.outages === outages() ? current.metrics : projected()
-  }
-
-  createKeyed(target, (current) => {
-    const accumulator: ProviderMetricState = {}
-
-    onCleanup(
-      current.data.listen(({ details }) => {
-        if (!isProviderMetricEvent(details) || details.data.sessionID !== current.id) return
-        applyProviderMetricEvent(accumulator, details)
-
-        if (accumulator.latest) setLive({ target: current, outages: outages(), metrics: accumulator.latest })
-      }),
-    )
-  })
 
   const na = () => ctx.t("na").toUpperCase()
   const heap = () => (state.heap.limit ? (state.heap.used ?? 0) / state.heap.limit : undefined)
@@ -627,31 +608,17 @@ export default function DebugBar(props: {
           </Tooltip>
         </Show>
         <Cell
+          label={ctx.t("duration.label")}
+          tip={ctx.t("duration.tip")}
+          value={turn()?.duration ?? na()}
+          dim={turn()?.duration === undefined}
+          inline={props.inline}
+        />
+        <Cell
           label={ctx.t("tps.label")}
           tip={ctx.t("tps.tip")}
-          value={fixed(metrics()?.tps, 1) ?? na()}
-          dim={metrics()?.tps === undefined}
-          inline={props.inline}
-        />
-        <Cell
-          label={ctx.t("ttft.label")}
-          tip={ctx.t("ttft.tip")}
-          value={duration(metrics()?.ttft) ?? na()}
-          dim={metrics()?.ttft === undefined}
-          inline={props.inline}
-        />
-        <Cell
-          label={ctx.t("ttfa.label")}
-          tip={ctx.t("ttfa.tip")}
-          value={duration(metrics()?.ttfa) ?? na()}
-          dim={metrics()?.ttfa === undefined}
-          inline={props.inline}
-        />
-        <Cell
-          label={ctx.t("e2e.label")}
-          tip={ctx.t("e2e.tip")}
-          value={duration(metrics()?.e2e) ?? na()}
-          dim={metrics()?.e2e === undefined}
+          value={fixed(turn()?.tps, 1) ?? na()}
+          dim={turn()?.tps === undefined}
           inline={props.inline}
         />
         <Show when={props.diagnostics}>

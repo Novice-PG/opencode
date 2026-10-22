@@ -4,7 +4,6 @@ import { createEffect, createResource, onCleanup, onMount, Show, type Component,
 import { Dynamic, render } from "solid-js/web"
 import { MetaProvider } from "@solidjs/meta"
 import { DialogProvider } from "@opencode/ui/context/dialog"
-import { MarkedProvider } from "@opencode/ui/context/marked"
 import { ThemeProvider, useTheme, type ColorScheme } from "@opencode/ui/theme"
 import { Font } from "@opencode/ui/font"
 import { LanguageProvider, UiI18nBridge, useLanguage } from "@/runtime/i18n/language"
@@ -77,21 +76,19 @@ function Decorators(props: { scheme: ColorScheme; fullscreen: boolean; file: str
             <Motion />
             <SettingsProvider>
               <DialogProvider>
-                <MarkedProvider>
-                  <div
-                    style={{
-                      // Outside fullscreen the page has 1rem of padding around the story. A full-viewport frame inside
-                      // it would make every story page scroll by 32px, so an incidental scroll could move the story
-                      // under a test.
-                      "min-height": props.fullscreen ? "100vh" : "calc(100vh - 2rem)",
-                      padding: props.fullscreen ? "0" : "24px",
-                      "background-color": "var(--background-base)",
-                      color: "var(--text-base)",
-                    }}
-                  >
-                    <ExtensionStory file={props.file}>{props.children}</ExtensionStory>
-                  </div>
-                </MarkedProvider>
+                <div
+                  style={{
+                    // Outside fullscreen the page has 1rem of padding around the story. A full-viewport frame inside
+                    // it would make every story page scroll by 32px, so an incidental scroll could move the story
+                    // under a test.
+                    "min-height": props.fullscreen ? "100vh" : "calc(100vh - 2rem)",
+                    padding: props.fullscreen ? "0" : "24px",
+                    "background-color": "var(--background-base)",
+                    color: "var(--text-base)",
+                  }}
+                >
+                  <ExtensionStory file={props.file}>{props.children}</ExtensionStory>
+                </div>
               </DialogProvider>
             </SettingsProvider>
           </UiI18nBridge>

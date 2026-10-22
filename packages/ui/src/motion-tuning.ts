@@ -9,6 +9,8 @@ type Knob<Kind extends string, Value> = {
   id: string
   label: string
   group: string
+  /** Shown only while this holds, e.g. the controls of the option a choice selects. */
+  when?: () => boolean
   initial: Value
   value: Value
 }
@@ -18,15 +20,20 @@ export const motionPresets = { snappy: "Snappy", smooth: "Smooth", calm: "Calm" 
 
 export type MotionPreset = keyof typeof motionPresets
 
+/** A CSS `cubic-bezier(x1, y1, x2, y2)`. */
+export type Bezier = [number, number, number, number]
+
 export type MotionKnob =
   | (Knob<"spring", DurationOptions> & { presets: Record<MotionPreset, DurationOptions> })
+  | Knob<"easing", Bezier>
+  | Knob<"mode", boolean>
   | Knob<"toggle", boolean>
   | (Knob<"number", number> & { min: number; max: number; step: number; unit?: string })
   | (Knob<"choice", string> & { options: readonly [string, ...string[]]; labels: Record<string, string> })
 
 export type MotionAction = { id: string; label: string; group: string; run: () => void }
 
-type Meta = { label: string; group: string }
+type Meta = { label: string; group: string; when?: () => boolean }
 
 // Bumped when knobs are merged or renamed, so values saved for the old ones are dropped.
 const key = "opencode.motion.v2"
@@ -37,7 +44,7 @@ const actions = new Map<string, MotionAction>()
 
 const listeners = new Set<() => void>()
 
-// Saved as numbers only: `<id>.duration` and `<id>.bounce` for springs, 0 or 1 for toggles, the option's index for choices.
+// Saved as numbers only: `<id>.duration` and `<id>.bounce` for springs, `<id>.0`…`<id>.3` for easings, 0 or 1 for toggles, the option's index for choices.
 const saved = load()
 
 export const motionTuning = {
@@ -50,6 +57,7 @@ export const motionTuning = {
       id,
       label: meta.label,
       group: meta.group,
+      when: meta.when,
       initial,
       value: { duration: number(`${id}.duration`, initial.duration), bounce: number(`${id}.bounce`, initial.bounce) },
       presets: meta.presets,
@@ -60,12 +68,47 @@ export const motionTuning = {
       bounce: Math.min(0.95, Math.max(0, knob.value.bounce)),
     })
   },
+  /** A cubic-bezier curve, edited with its handles. */
+  easing(id: string, meta: Meta & { value: Bezier }) {
+    const knob = register({
+      kind: "easing",
+      id,
+      label: meta.label,
+      group: meta.group,
+      when: meta.when,
+      initial: meta.value,
+      // SAFETY: mapping the four indices of a Bezier yields four numbers.
+      value: [0, 1, 2, 3].map((index) => number(`${id}.${index}`, meta.value[index])) as Bezier,
+    })
+
+    return () => knob.value
+  },
+  /**
+   * An alternative to a section's springs, offered beside the Snappy, Smooth and Calm presets rather than as a row.
+   * Choosing it turns it on; choosing any other preset turns it off. Knobs can show only in one or the other with `when`.
+   */
+  mode(id: string, meta: Meta & { value?: boolean }) {
+    const initial = meta.value ?? false
+
+    const knob = register({
+      kind: "mode",
+      id,
+      label: meta.label,
+      group: meta.group,
+      when: meta.when,
+      initial,
+      value: number(id, initial ? 1 : 0) === 1,
+    })
+
+    return () => knob.value
+  },
   toggle(id: string, meta: Meta & { value: boolean }) {
     const knob = register({
       kind: "toggle",
       id,
       label: meta.label,
       group: meta.group,
+      when: meta.when,
       initial: meta.value,
       value: number(id, meta.value ? 1 : 0) === 1,
     })
@@ -82,6 +125,7 @@ export const motionTuning = {
       id,
       label: meta.label,
       group: meta.group,
+      when: meta.when,
       initial: meta.value,
       value: options[number(id, options.indexOf(meta.value))] ?? meta.value,
       options,
@@ -104,6 +148,7 @@ export const motionTuning = {
       id,
       label: meta.label,
       group: meta.group,
+      when: meta.when,
       initial: meta.value,
       value: number(id, meta.value),
       min: meta.min,
@@ -212,7 +257,14 @@ function save() {
           [`${knob.id}.bounce`, knob.value.bounce, knob.initial.bounce],
         ]
 
-      if (knob.kind === "toggle") return [[knob.id, Number(knob.value), Number(knob.initial)]]
+      if (knob.kind === "easing")
+        return knob.value.map((value, index): [string, number, number] => [
+          `${knob.id}.${index}`,
+          value,
+          knob.initial[index],
+        ])
+
+      if (knob.kind === "toggle" || knob.kind === "mode") return [[knob.id, Number(knob.value), Number(knob.initial)]]
 
       if (knob.kind === "choice")
         return [[knob.id, knob.options.indexOf(knob.value), knob.options.indexOf(knob.initial)]]
