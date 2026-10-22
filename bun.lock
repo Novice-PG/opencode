@@ -71,6 +71,7 @@
         "@opencode/session-ui": "workspace:*",
         "@opencode/ui": "workspace:*",
         "@opencode/util": "workspace:*",
+        "@pierre/highlights": "catalog:",
         "@pierre/trees": "1.0.0-beta.6",
         "@sentry/solid": "catalog:",
         "@solid-primitives/event-bus": "1.1.2",
@@ -105,7 +106,7 @@
         "diff": "catalog:",
         "ghostty-web": "github:anomalyco/ghostty-web#83c0a07b8628b748aed073b232cb4b52a6ca11c1",
         "happy-dom": "20.11.1",
-        "knobs": "npm:@kitlangton/knobs@0.3.0",
+        "knobs": "npm:@kitlangton/knobs@0.4.0-next.12",
         "tw-animate-css": "1.4.0",
         "vite": "8.2.2",
         "vite-plugin-pwa": "1.3.0",
@@ -896,7 +897,7 @@
         "@solid-primitives/resize-observer": "catalog:",
         "fuzzysort": "catalog:",
         "katex": "0.16.47",
-        "knobs": "npm:@kitlangton/knobs@0.3.0",
+        "knobs": "npm:@kitlangton/knobs@0.4.0-next.12",
         "marked": "catalog:",
         "motion": "12.34.5",
         "remeda": "catalog:",
@@ -4091,7 +4092,7 @@
 
     "klona": ["klona@2.0.6", "", {}, "sha512-dhG34DXATL5hSxJbIexCft8FChFXtmskoZYnoPWjXQuebWYCNkVeV3KkGegCK9CP1oswI/vQibS2GY7Em/sJJA=="],
 
-    "knobs": ["@kitlangton/knobs@0.3.0", "", { "dependencies": { "@kitlangton/rolling-number": "^0.4.1" }, "peerDependencies": { "react": ">=18", "solid-js": ">=1.8" }, "optionalPeers": ["react", "solid-js"] }, "sha512-zdaDcWFUpmntcsKv/VyVJyWKABodHbVFrreSwELNVvnxKJNe23vaAB6qgYNIjQpiUUfJdxkGnmAw41qmPkNfWQ=="],
+    "knobs": ["@kitlangton/knobs@0.4.0-next.12", "", { "dependencies": { "@kitlangton/rolling-number": "^0.4.1" }, "peerDependencies": { "@pierre/diffs": "^1.5.2", "react": ">=18", "solid-js": ">=1.8" }, "optionalPeers": ["@pierre/diffs", "react", "solid-js"] }, "sha512-ImGtRxPKbuqi25YzQYpiAuLELtxt9XJM75VXp2gjWopwsTP+KkqzBuWl62qccLnHuCiJ/t9VEcqrSsqT1zvmHg=="],
 
     "lang-map": ["lang-map@0.4.0", "", { "dependencies": { "language-map": "^1.1.0" } }, "sha512-oiSqZIEUnWdFeDNsp4HId4tAxdFbx5iMBOwA3666Fn2L8Khj8NiD9xRvMsGmKXopPVkaDFtSv3CJOmXFUB0Hcg=="],
 
