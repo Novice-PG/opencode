@@ -263,6 +263,7 @@ export const Experiments = {
 function ExperimentPreview() {
   let panel!: HTMLDivElement
   onMount(() => onCleanup(mountMotionPanel(panel, { section: "Experiments" })))
+
   return (
     <div class="grid grid-cols-[minmax(0,1fr)_340px]">
       <SettingsProvider>

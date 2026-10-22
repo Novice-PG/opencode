@@ -8,6 +8,7 @@ import { Experiments } from "./activity-chips.stories"
 
 function Preview() {
   useTheme().setColorScheme("dark")
+
   return <Experiments.render />
 }
 
@@ -32,14 +33,17 @@ function choose(mode: string, corners: string) {
     ["activity.chip.corners", corners],
   ]) {
     const knob = motionTuning.list().find((item) => item.id === id)
+
     if (!knob || knob.kind !== "choice" || !knob.options.includes(value))
       throw new Error(`Invalid choice ${id}: ${value}`)
     motionTuning.set(knob, value)
   }
 }
+
 declare global {
   interface Window {
     chipExperiment: typeof choose
   }
 }
+
 window.chipExperiment = choose
